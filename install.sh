@@ -102,7 +102,7 @@ ohai "Downloading and installing EBI-Utils..."
 (
   cd "${PREFIX}" >/dev/null || return
 
-  execute "git" "clone" "$REPO"
+  execute "git" "clone" "$REPO" .
 
 ) || exit 1
 
