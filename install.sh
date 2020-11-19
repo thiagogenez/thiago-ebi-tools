@@ -88,24 +88,51 @@ fi
 #######################################################################################
 #######################################################################################
 
-ohai "This script will install:"
-echo "${PREFIX}"
-
 if ! [[ -d "${PREFIX}" ]]; then
     execute "/bin/mkdir" "-p" "${PREFIX}"
+else
+	abort "${PREFIX} already exist!"
 fi
+
+
+ohai "This script will install:"
+echo "${PREFIX}"
 
 ohai "Downloading and installing EBI-Utils..."
 (
   cd "${PREFIX}" >/dev/null || return
 
-  # we do it in four steps to avoid merge errors when reinstalling
   execute "git" "clone" "$REPO"
 
 ) || exit 1
 
+
+
+ohai "Next steps:"
+
+case "$SHELL" in
+*/bash*)
+  if [[ -r "$HOME/.bash_profile" ]]; then
+    shell_profile="$HOME/.bash_profile"
+  else
+    shell_profile="$HOME/.profile"
+  fi
+  ;;
+*/zsh*)
+  shell_profile="$HOME/.zshrc"
+  ;;
+*)
+  shell_profile="$HOME/.profile"
+  ;;
+esac
+
 if [[ ":${PATH}:" != *":${PREFIX}/bin:"* ]]; then
   warn "${PREFIX}/bin is not in your PATH."
+  warn "$(cat <<EOWARN
+Add ebi-utils to your ${tty_bold}PATH${tty_reset} in ${tty_underline}${shell_profile}${tty_reset}:
+    export 'PATH=${PREFIX}/bin:${PATH}'
+EOWARN
+)"
 fi
 
 ohai "Installation successful!"
