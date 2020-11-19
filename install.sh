@@ -130,7 +130,7 @@ if [[ ":${PATH}:" != *":${PREFIX}/bin:"* ]]; then
   warn "${PREFIX}/bin is not in your PATH."
   warn "$(cat <<EOWARN
 Add ebi-utils to your ${tty_bold}PATH${tty_reset} in ${tty_underline}${shell_profile}${tty_reset}:
-    export 'PATH=${PREFIX}/bin:${PATH}'
+    export 'PATH=${PREFIX}/bin:$PATH'
 EOWARN
 )"
 fi
