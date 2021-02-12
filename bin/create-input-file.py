@@ -39,6 +39,6 @@ if __name__ == "__main__":
   for file in fasta_files:
     for row in body:
       if row == file.lower().split('.')[0]:
-        f.write('{} {}\n'.format(row, os.path.abspath(file)))
+        f.write('{} {}/{}\n'.format(row, args.fastaPath, file))
 
   f.close()
