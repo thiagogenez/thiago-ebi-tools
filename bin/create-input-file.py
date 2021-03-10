@@ -5,6 +5,7 @@ import argparse
 import os.path
 import sys
 import uuid
+from datetime import datetime
 
 if __name__ == "__main__":
 
@@ -27,6 +28,10 @@ if __name__ == "__main__":
     args.output = args.treeFile + '.processed.txt'
   
   f = open(args.output, "w")  
+  
+  f.write('# File auto-generated On {}\n'.format(datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+  f.write('# Command: {}\n'.format(' '.join(sys.argv)))
+  f.write('#\n') 
 
   with open(args.treeFile) as file:
     nodes = file.readlines()
@@ -35,10 +40,15 @@ if __name__ == "__main__":
     body = nodes[0].strip().replace('(','').replace(')','').replace(';','').split(',')
     body = [i.split(':')[0] for i in body]
 
+  d = dict()
 
   for file in fasta_files:
-    for row in body:
-      if row == file.lower().split('.')[0]:
-        f.write('{} {}/{}\n'.format(row, args.fastaPath, file))
+    key = file.lower().split('.')[0]
+    d[key] = '{}/{}'.format(args.fastaPath, file)
+
+  for row in body:
+    key = row.lower()
+    if key in d:
+      f.write('{} {}\n'.format(row, d[key]))
 
   f.close()
