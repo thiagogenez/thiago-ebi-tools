@@ -25,12 +25,14 @@ if __name__ == "__main__":
     print(args.fastaPath)
 
   if args.output is None:
-    args.output = args.treeFile + '.processed.txt'
+    if '.' in args.treeFile:
+        filename = args.treeFile.split('.')[0]
+    args.output = filename + '.processed.txt'
   
   f = open(args.output, "w")  
   
-  f.write('# File auto-generated On {}\n'.format(datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
-  f.write('# Command: {}\n'.format(' '.join(sys.argv)))
+  f.write('# File generated On {}\n'.format(datetime.now().strftime("%d/%m/%Y %H:%M:%S")))
+  f.write('# by the following command: {}\n'.format(' '.join(sys.argv)))
   f.write('#\n') 
 
   with open(args.treeFile) as file:
@@ -38,17 +40,18 @@ if __name__ == "__main__":
     f.write(nodes[0])
 
     body = nodes[0].strip().replace('(','').replace(')','').replace(';','').split(',')
-    body = [i.split(':')[0] for i in body]
+    body = [i.split(':')[0].strip() for i in body]
 
   d = dict()
 
   for file in fasta_files:
-    key = file.lower().split('.')[0]
-    d[key] = '{}/{}'.format(args.fastaPath, file)
+    names = file.lower().split('.')
+    d[(names[0],names[1])] = '{}/{}'.format(args.fastaPath, file)
 
   for row in body:
-    key = row.lower()
-    if key in d:
-      f.write('{} {}\n'.format(row, d[key]))
+    fasta = row.lower()
+    for key, value in d.items():
+        if fasta in key:
+            f.write('{} {}\n'.format(row, value))
 
   f.close()
