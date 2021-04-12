@@ -14,7 +14,7 @@ get_elapsed_time(){
 start_time=$SECONDS
 while true do;
 	cactus_pid=$(ps axf | grep 'cactus-preprocess\|cactus-blast' | grep -v grep | awk '{print $1}')
-	if [[ "$cactus_pid" != "" ]] then;
+	if [[ "$cactus_pid" != "" ]]; then
 		break
 	fi
 	sleep(0.5)
