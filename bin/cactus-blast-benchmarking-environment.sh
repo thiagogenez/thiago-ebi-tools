@@ -5,13 +5,12 @@ if [[ $# != 2 ]]; then
 	exit 1
 fi
 
-specie=$2
 CONFIG_PATH=$1
-
+specie=$2
 
 # sanity check
 if [[ ! -d $CONFIG_PATH/$specie ]]; then
-	echo "No specie name at $CONFIG_PATH"
+	echo "No specie name $specie localised at $CONFIG_PATH/$specie"
 	exit 1
 fi
 
