@@ -17,7 +17,7 @@ while true do;
 	if [[ "$cactus_pid" != "" ]]; then
 		break
 	fi
-	sleep(0.5)
+	sleep 1
 
 	elapsed=$(get_elapsed_time $start_time)
 	if [[ "$elapsed" -gt "30" ]]; then
