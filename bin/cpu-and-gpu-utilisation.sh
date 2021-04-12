@@ -12,7 +12,7 @@ get_elapsed_time(){
 }
 
 start_time=$SECONDS
-while true do;
+while true; do
 	cactus_pid=$(ps axf | grep 'cactus-preprocess\|cactus-blast' | grep -v grep | awk '{print $1}')
 	if [[ "$cactus_pid" != "" ]]; then
 		break
@@ -25,14 +25,14 @@ while true do;
 		exit 1
 	fi
 	
-done;
+done
 
 #start_time="$(date +%s.%N)"
 start_time=$SECONDS
 
 echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE,GPU_USAGE" >> $CSV_FILE
 
-while true do;
+while true; do
 	# GPU parser is slower, so get it first
 	GPU_USAGE=$(nvidia-smi | grep "%" | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END { print(sum / NR) }')
 	CPU_USAGE=$(cat <(grep 'cpu ' /proc/stat) <(sleep 0.05 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
