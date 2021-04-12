@@ -35,7 +35,7 @@ echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE,GPU_USAGE" >> $CSV_FILE
 while true; do
 	# GPU parser is slower, so get it first
 	GPU_USAGE=$(nvidia-smi | grep "%" | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END { print(sum / NR) }')
-	CPU_USAGE=$(cat <(grep 'cpu ' /proc/stat) <(sleep 0.05 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
+	CPU_USAGE=$(cat <(grep 'cpu ' /proc/stat) <(sleep 0.1 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
 
 	#end_time="$(date +%s.%N)"
 	
@@ -45,7 +45,8 @@ while true; do
 	echo "$elapsed,$format_time,$CPU_USAGE,$GPU_USAGE" >> $CSV_FILE
 
 	# if cactus process is dead, exit the script
-	ps -p $cactus_pid || exit 0
+	ps -p $cactus_pid > /dev/null || break
 done
 
-
+echo "$(basename $0) finalised"
+exit 0
