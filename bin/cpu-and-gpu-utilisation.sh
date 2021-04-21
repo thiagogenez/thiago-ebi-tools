@@ -30,11 +30,14 @@ done
 #start_time="$(date +%s.%N)"
 start_time=$SECONDS
 
-echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE,CPU_USAGE2,GPU_USAGE,MEM_USAGE" >> $CSV_FILE
+echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE,CPU_USAGE2,GPU_USAGE,MEM_USAGE,GPU_MEM_USAGE" >> $CSV_FILE
 
 while true; do
 	# GPU parser is slower, so get it first
-	GPU_USAGE=$(nvidia-smi | grep "%" | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END { print(sum / NR) }')
+	nvidia-smi > nvidia.log
+
+	GPU_USAGE=$(grep "%" nvidia.log | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END {  if (NR > 0) print(sum / NR) }')
+	GPU_MEM_USAGE=$(grep "MiB" nvidia.log | head -4 | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
 	MEM_USAGE=$(free -t | awk 'FNR == 2 {print ($3/$2)*100}')
 	CPU_USAGE=$(top -b -n2 -d 0.01 | fgrep "Cpu(s)" | tail -1 | gawk '{print $2+$4+$6}')
 	CPU_USAGE_2=$(cat <(grep 'cpu ' /proc/stat) <(sleep 1 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
@@ -43,7 +46,9 @@ while true; do
 	elapsed=$(get_elapsed_time $start_time)
 	format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
 	
-	echo "$elapsed,$format_time,$CPU_USAGE,$CPU_USAGE_2,$GPU_USAGE,$MEM_USAGE" >> $CSV_FILE
+	echo "$elapsed,$format_time,$CPU_USAGE,$CPU_USAGE_2,$GPU_USAGE,$MEM_USAGE,$GPU_MEM_USAGE" >> $CSV_FILE
+
+	rm nvidia.log
 
 	# if cactus process is dead, exit the script
 	ps -p $cactus_pid > /dev/null || break
