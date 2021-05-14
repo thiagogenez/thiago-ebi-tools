@@ -94,7 +94,7 @@ done
 #start_time="$(date +%s.%N)"
 start_time=$SECONDS
 
-if [[ "$GPU" == "1" ]]; then
+if [[ "$GPU" == "YES" ]]; then
   echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE,CPU_USAGE2,GPU_USAGE,MEM_USAGE,GPU_MEM_USAGE" >> $CSV_FILE
   #nvidia filename
   NVIDIA_LOG="nvidia-$(hostname).log"
@@ -108,7 +108,7 @@ fi
 
 while true; do
    
-  if [[ "$GPU" == "1" ]]; then
+  if [[ "$GPU" == "YES" ]]; then
     # GPU parser is slower, so get it first
     nvidia-smi > $NVIDIA_LOG
 
@@ -126,7 +126,7 @@ while true; do
   elapsed=$(get_elapsed_time $start_time)
   format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
 
-  if [[ "$GPU" == "1" ]]; then
+  if [[ "$GPU" == "YES" ]]; then
 
     echo "$elapsed,$format_time,$CPU_USAGE,$CPU_USAGE_2,$GPU_USAGE,$MEM_USAGE,$GPU_MEM_USAGE" >> $CSV_FILE
 
