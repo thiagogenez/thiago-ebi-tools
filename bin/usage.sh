@@ -111,9 +111,9 @@ while true; do
   if [[ "$GPU" == "YES" ]]; then
     # GPU parser is slower, so get it first
     nvidia-smi > $NVIDIA_LOG
-
+    AMOUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
     GPU_USAGE=$(grep "%" $NVIDIA_LOG | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END {  if (NR > 0) print(sum / NR) }')
-    GPU_MEM_USAGE=$(grep "MiB" $NVIDIA_LOG | head -4 | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
+    GPU_MEM_USAGE=$(grep "MiB" $NVIDIA_LOG | head -$AMOUNT | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
   else
     # nvidia-smi is a bit slow, so simulate a pause here
     sleep 5
