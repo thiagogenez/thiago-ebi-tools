@@ -56,7 +56,7 @@ if [[ "$CSV_FILE" == "" ]]; then
 fi
 
 
-CVS_FILE_2="${CSV_FILE}-top.txt"
+CVS_FILE_2="$(echo ${CSV_FILE})-top.txt"
 echo "Given arguments:"
 echo "  FILE CSV_FILE   = ${CSV_FILE}"
 echo "  FILE CSV_FILE 2 = ${CSV_FILE_2}"
