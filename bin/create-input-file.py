@@ -24,6 +24,17 @@ if __name__ == "__main__":
   except FileNotFoundError as not_found:
     print(args.fastaPath)
 
+
+  not_fasta = []
+  for file in fasta_files:
+    if not file.endswith('.fa'):
+        not_fasta.append(file)
+        print('{} is not a fasta file'.format(file))
+  
+
+  for file in not_fasta:
+    fasta_files.remove(file)
+
   if args.output is None:
     if '.' in args.treeFile:
         filename = args.treeFile.split('.')[0]
@@ -41,7 +52,6 @@ if __name__ == "__main__":
 
     body = nodes[0].strip().replace('(','').replace(')','').replace(';','').split(',')
     body = [i.split(':')[0].strip() for i in body]
-
   d = dict()
 
   for file in fasta_files:
@@ -51,7 +61,7 @@ if __name__ == "__main__":
   for row in body:
     fasta = row.lower()
     for key, value in d.items():
-        if fasta in key:
+        if fasta in key[0]:
             f.write('{} {}\n'.format(row, value))
 
   f.close()
