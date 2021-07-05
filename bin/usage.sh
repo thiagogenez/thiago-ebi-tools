@@ -144,7 +144,7 @@ while true; do
     rm $NVIDIA_LOG
 
   else
-    if [[ ! -z $consolidated_pid ]]; then
+    if [[ -z $consolidated_pid ]]; then
       CPU_CONSOLIDATED=0.0
       MEMORY_CONSOLIDATED=0.0
     else
