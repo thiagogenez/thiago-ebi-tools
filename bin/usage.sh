@@ -128,10 +128,10 @@ while true; do
 
   # cactus-consolidated
   if [[ -z $consolidated_pid ]]; then
-    consolidated_pid=$(ps axf | grep 'cactus_consolidated' | grep -v grep | awk '{print $1}')
-    #echo "consolidated_pid=$consolidated_pid"
+    consolidated_pid=$(ps axf | grep 'cactus_consolidated' | grep -v grep | awk '{print $1}' | tail -1)
+    echo "consolidated_pid=$consolidated_pid"
   fi
-  echo "consolidated_pid=$consolidated_pid"
+  
   #ps -o user,pid,ppid,ni,rss,sz,vsz,%cpu,%mem,state,pagein,etime,cmd --width=2048 >> ${CSV_FILE_2}
   #CPU_CONSOLIDATED=$(cat ${CSV_FILE_2} | grep cactus_consolidated | awk 'END {print $8}')
   #MEMORY_CONSOLIDATED=$(cat ${CSV_FILE_2} | grep cactus_consolidated | awk 'END {print $9}')
@@ -149,7 +149,6 @@ while true; do
       CPU_CONSOLIDATED=0.0
       MEMORY_CONSOLIDATED=0.0
     else
-      echo "top -b -n 2 -d 0.2 -p $consolidated_pid | tail -1"
       top_consolidated=$(top -b -n 2 -d 0.2 -p $consolidated_pid | tail -1 )
       CPU_CONSOLIDATED=$(echo $top_consolidated | awk '{print $9}' )
       MEMORY_CONSOLIDATED=$(echo $top_consolidated | awk '{print $10}' )
