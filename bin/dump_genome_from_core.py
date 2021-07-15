@@ -3,7 +3,7 @@
 import fileinput
 import argparse
 import subprocess
-import os.path
+import os
 
 import yaml
 from yaml.loader import SafeLoader
@@ -11,12 +11,17 @@ from yaml.loader import SafeLoader
 PERL_SCRIPT = "/hps/software/users/ensembl/repositories/compara/thiagogenez/master/ensembl-compara/scripts/dumps/dump_genome_from_core.pl"
 
 
-def subprocess_call(parameters,shell=False):
+def subprocess_call(parameters, work_dir=None, shell=False, ibsub=False):
+    if ibsub:
+        parameters = ['ibsub', '-d'] + parameters
+    
     call = parameters
+    print("Running: {}".format(' '.join(call)))
     process = subprocess.Popen(
         call,
         shell=shell,
         encoding="ascii",
+        cwd=work_dir, 
         #stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         universal_newlines=True
@@ -30,7 +35,7 @@ def subprocess_call(parameters,shell=False):
     #    process.kill()
     #    output, err = process.communicate()
         
-    
+    process.wait()
     if process.returncode != 0:
         out = "stdout={}".format(output)
         out += ", stderr={}".format(stderr)
@@ -42,9 +47,13 @@ def subprocess_call(parameters,shell=False):
 
 
 def download_file(host, port, core_db, fasta_filename, mask="soft"):
+    
+    work_dir = '/hps/software/users/ensembl/repositories/compara/thiagogenez/master/ensembl-compara/scripts/dumps'
+    script = 'dump_genome_from_core.pl'
+
     perl_call = [
         "perl",
-        "{}".format(PERL_SCRIPT),
+        "{}/{}".format(work_dir,script),
         "--core_db",
         "{}".format(core_db),
         "--host",
@@ -56,8 +65,7 @@ def download_file(host, port, core_db, fasta_filename, mask="soft"):
         "--outfile",
         "{}".format(fasta_filename)
     ]
-    #print(perl_call)
-    return subprocess_call(parameters=perl_call, shell=True)
+    return subprocess_call(parameters=perl_call, ibsub=True, shell=False)
 
 def get_name(host, core_db):
     mysql_call = [
@@ -70,30 +78,35 @@ def get_name(host, core_db):
     return subprocess_call(parameters=mysql_call)
 
 
-def parse_yaml(filename):
-    with open(filename) as f:
-        content = yaml.load(f, Loader=SafeLoader)
-        for data in content:
+def parse_yaml(file, dest):
+    
+    content = yaml.load(file, Loader=SafeLoader)
+    for data in content:
 
-            host = data['host']
-            port = data['port']
+        host = data['host']
+        port = data['port']
 
-            for core_db in data['core_db']:
-                name = get_name(host=host, core_db=core_db)
-                name = name.replace('_','.')
-                download_file(
-                    host=host,
-                    port=port,
-                    core_db=core_db,
-                    fasta_filename='{}.fa'.format(name)
-                )
-                print(name)
-                return 
+        for core_db in data['core_db']:
+            name = get_name(host=host, core_db=core_db)
+            name = name.replace('_','.')
+            download_file(
+                host=host,
+                port=port,
+                core_db=core_db,
+                fasta_filename='{}/{}.fa'.format(dest,name)
+            )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--yaml", type=str, help="YAML input file")
-    parser.add_argument("--output", type=str, help="Processed output file")
+    parser.add_argument("--yaml", required=True, type=str, help="YAML input file")
+    parser.add_argument("--output", required=False, default=None, type=str, help="Processed output file")
     args = parser.parse_args()
 
-    parse_yaml(filename=args.yaml)
+    with open(args.yaml, mode='r') as f:
+
+        if args.output is None:
+            args.output = os.path.dirname(os.path.realpath(f.name))
+        else:
+            args.output = os.path.abspath(args.output)
+        
+        parse_yaml(file=f, dest=args.output)
