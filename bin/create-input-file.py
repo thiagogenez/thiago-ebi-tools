@@ -72,6 +72,10 @@ def create_new_tree(tree_content, fasta_content, format):
         if not fasta['used']:
             print('Not match any for {}'.format(leaf.name))
 
+    # remove labels on non-leaf nodes
+    for non_leaf in tree_content['tree'].get_nonterminals():
+        non_leaf.confidence = None     
+
     Phylo.write(
         trees=tree_content['tree'],
         file=tree_content['path'],
@@ -93,7 +97,8 @@ def append_fasta_paths(filename, fasta_content):
 
     with open(filename, mode='a') as f:
         for fasta in fasta_content.values():
-            f.write('{} {}\n'.format(fasta['name'], fasta['path']))
+            if fasta['used']:
+                f.write('{} {}\n'.format(fasta['name'], fasta['path']))
 
 
 def add_makeup(
@@ -120,7 +125,7 @@ def add_makeup(
         f.write('#\n')
         f.write(
             '# Tree below contains files={} and terminals={}'.format(
-                qtd_files, qtd_terminals))
+                qtd_files - len(files_not_used), qtd_terminals))
         f.write('\n# Files not used: \n')
         for fasta in files_not_used:
             f.write('# {} {}\n'.format(fasta['name'], fasta['path']))

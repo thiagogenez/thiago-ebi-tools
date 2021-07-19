@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import pathlib
+import re
 
 STRING_TABLE = {
     "round": "### Round",
@@ -13,32 +14,60 @@ STRING_TABLE = {
     "blast": "cactus-blast",
     "hal2fasta": "hal2fasta",
     "merging": "## HAL merging",
+    "alignment": "## Alignment",
 }
 
 
-def prepare_round(steps_dir, jobstore_dir, rounds_dir):
-    pathlib.Path(rounds_dir).mkdir(parents=True, exist_ok=True)
+def prepare_round(steps_dir, jobstore_dir, round_path):
+    pathlib.Path(round_path).mkdir(parents=True, exist_ok=True)
 
-    os.symlink(src=jobstore_dir, dst=rounds_dir, target_is_directory=True)
-    os.symlink(src=steps_dir, dst=rounds_dir, target_is_directory=True)
-
+    for i in [steps_dir, jobstore_dir]:
+        relativepath = os.path.relpath(i, round_path)
+        fromfolderWithFoldername = round_path + '/' + os.path.basename(i)
+        #print('round_path={}, i={}, os.path.basename(i)={}'.format(round_path, i, os.path.basename(i)))
+        #print('fromfolderWithFoldername: '+fromfolderWithFoldername) 
+        #print('relativepath: '+ relativepath)
+        os.symlink(src=relativepath, dst=fromfolderWithFoldername)   
+    
 
 def append(filename, line):
-    with open(filename, mode="w+") as f:
-        f.write(line)
+    with open(filename, mode="a") as f:
+        f.write(line + '\n')
+
+def parse_preprocessor(lines, line_number, steps_dir, jobstore_dir, input_dir):
+
+    while line_number < len(lines):
+        line = lines[line_number].strip()
+        
+        # empty line, next
+        if not line:
+            # go to the next line
+            line_number = line_number + 1
+            continue
+
+        # job done
+        if line.startswith(STRING_TABLE["alignment"]):
+            return line_number
+
+    raise Exception("ERROR: parsing Preprocessor step")
 
 
 def parse_alignment(lines, line_number, steps_dir, jobstore_dir, rounds_dir):
 
     while line_number < len(lines):
         line = lines[line_number].strip()
-
+        
+        # empty line, next
         if not line:
+            # go to the next line
+            line_number = line_number + 1
             continue
 
+        # job done
         if line.startswith(STRING_TABLE["merging"]):
             return line_number
 
+        # create a new round directory
         if line.startswith(STRING_TABLE["round"]):
             round_id = line.split()[-1]
             round_path = "{}/rounds/{}".format(rounds_dir, round_id)
@@ -49,18 +78,24 @@ def parse_alignment(lines, line_number, steps_dir, jobstore_dir, rounds_dir):
             )
 
             block_id = 0
+            
+            # go to the next line
+            line_number = line_number + 1
             continue
 
+        # sanity check
         assert "round_path" in locals()
 
-        if line.startswith(STRING_TABLE["blast"]):
-            block_filename = "{}/block-{}.txt".format(round_path, block_id)
+       	# get Anc_id from the current command-line
+        anc_id = re.findall('Anc[0-9]+', line)[0]
+        
+        # create block filename
+        block_filename = "{}/{}.txt".format(round_path, anc_id)
 
+        # write the current command-line in the file
         append(filename=block_filename, line=line)
 
-        if line.startswith(STRING_TABLE["hal2fasta"]):
-            block_id = block_id + 1
-
+        # get the next line
         line_number = line_number + 1
 
     raise Exception("ERROR: Parsing alignment step")
@@ -132,12 +167,12 @@ if __name__ == "__main__":
     while line_number < len(lines):
         line = lines[line_number].strip()
         if line.startswith(STRING_TABLE["round"]):
-            line = parse_alignment(
+            line_number = parse_alignment(
                 lines=lines,
                 line_number=line_number,
                 jobstore_dir=args.jobstore_dir,
                 steps_dir=args.steps_dir,
                 rounds_dir=args.rounds_dir,
             )
-
+            
         line_number = line_number + 1
