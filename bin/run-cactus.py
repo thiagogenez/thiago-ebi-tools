@@ -8,68 +8,137 @@ import tempfile
 import pathlib
 
 STRING_TABLE = {
-	'round': '### Round',
-	'align': 'cactus-align',
-	'blast': 'cactus-blast'
-	'hal2fasta': 'hal2fasta',
-	'round_to_link': ['jobstore', 'steps'],
-	'merging': '## HAL merging'
+    "round": "### Round",
+    "align": "cactus-align",
+    "blast": "cactus-blast",
+    "hal2fasta": "hal2fasta",
+    "merging": "## HAL merging",
 }
 
 
-def prepare_round(dir, round_id, to_link):
-	round_path = '{}/rounds/{}'.format(dir, round_id)
-	pathlib.Path(round_path).mkdir(parents=True, exist_ok=True)
+def prepare_round(round_id, steps_dir, jobstore_dir, rounds_dir):
+    round_path = "{}/rounds/{}".format(round_id, round_id)
+    pathlib.Path(round_path).mkdir(parents=True, exist_ok=True)
 
-	for i in to_link:
-		os.symlink(
-			src='{}/{}'.format(dir, i), 
-			dst='{}'.format(round_path),
-			target_is_directory=True
-		)
-		
-	return round_path
+    os.symlink(src=jobstore_dir, dst=round_path, target_is_directory=True)
+    os.symlink(src=steps_dir, dst=round_path, target_is_directory=True)
+
+    return round_path
+
 
 def append(filename, line):
-	with open(filename, mode='w+') as f:
-		f.write(line)
+    with open(filename, mode="w+") as f:
+        f.write(line)
 
-def parse_alignment(lines, dir, line_number):
-		
-	while line_number < len(lines):
-		line = lines[line_number].strip()
-		
-		if not line:
-			continue
 
-		if line.startswith(STRING_TABLE['merging']):
-			return line_number
+def parse_alignment(lines, line_number, steps_dir, jobstore_dir, rounds_dir):
 
-		if line.startswith(STRING_TABLE['round']):
-			round_id = line.split()[-1]	
-			round_path = prepare_round(dir=dir, round_id=round_id, to_link=STRING_TABLE['round_to_link'])
-			block_id = 0
-			continue
+    while line_number < len(lines):
+        line = lines[line_number].strip()
 
-		if line.startswith(STRING_TABLE['blast']):
-			block_filename = '{}/block-{}.txt'.format(round_path, block_id)
+        if not line:
+            continue
 
-		append(filename=block_filename, line=line)	
+        if line.startswith(STRING_TABLE["merging"]):
+            return line_number
 
-		if line.startswith(STRING_TABLE['hal2fasta']):
-			block_id = block_id + 1
+        if line.startswith(STRING_TABLE["round"]):
+            round_id = line.split()[-1]
+            round_path = prepare_round(
+                steps_dir=steps_dir,
+                jobstore_dir=jobstore_dir,
+                rounds_dir=rounds_dir,
+                round_id=round_id,
+            )
 
-		line_number = line_number + 1
+            block_id = 0
+            continue
 
-	raise Exception("ERROR: Parsing alignment step")
+        if line.startswith(STRING_TABLE["blast"]):
+            block_filename = "{}/block-{}.txt".format(round_path, block_id)
+
+        append(filename=block_filename, line=line)
+
+        if line.startswith(STRING_TABLE["hal2fasta"]):
+            block_id = block_id + 1
+
+        line_number = line_number + 1
+
+    raise Exception("ERROR: Parsing alignment step")
+
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--command-file', metavar='PATH', type=str, required=True, help='Output file from cactus-prepare command-line')
-    parser.add_argument('--dir', metavar='PATH',type=str, required=True, help='Directory that contains the step and jobstore directories')
-    parser.add_argument('--preprocess-only', metavar='True or False', type=bool, required=False, default=False, help='Prepare only cactus-preprocess command-line')
-    parser.add_argument('--alignment-only', metavar='True or False', type=bool, required=False, default=False, help='Prepare only cactus-blast, cactus-align and command-lines')
-
+    parser.add_argument(
+        "--commands",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Output file from cactus-prepare command-line",
+    )
+    parser.add_argument(
+        "--steps_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the steps directory",
+    )
+    parser.add_argument(
+        "--jobstore_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the jobstore directory",
+    )
+    parser.add_argument(
+        "--rounds_dir",
+        metavar="PATH",
+        type=str,
+        default=None,
+        required=False,
+        help="Location of the rounds directory",
+    )
+    parser.add_argument(
+        "--preprocess-only",
+        metavar="True or False",
+        type=bool,
+        required=False,
+        default=False,
+        help="Prepare only cactus-preprocess command-line",
+    )
+    parser.add_argument(
+        "--alignment-only",
+        metavar="True or False",
+        type=bool,
+        required=False,
+        default=False,
+        help="Prepare only cactus-blast, cactus-align and command-lines",
+    )
 
     args = parser.parse_args()
+
+    with open(args.commands, mode="r") as f:
+        lines = f.readlines()
+
+        if args.rounds_dir is None:
+            args.rounds_dir = os.path.dirname(os.path.realpath(f.name))
+        else:
+            args.rounds_dir = os.path.abspath(args.rounds_dir)
+
+    args.steps_dir = os.path.abspath(args.steps_dir)
+    args.jobstore_dir = os.path.abspath(args.jobstore_dir)
+
+    line_number = 0
+    while line_number < len(lines):
+        line = lines[line_number].strip()
+        if line.startswith(STRING_TABLE["round"]):
+            line = parse_alignment(
+                lines=lines,
+                line_number=line_number,
+                jobstore_dir=args.jobstore_dir,
+                steps_dir=args.steps_dir,
+                rounds_dir=args.rounds_dir,
+            )
+
+        line_number = line_number + 1
