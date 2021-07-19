@@ -16,14 +16,11 @@ STRING_TABLE = {
 }
 
 
-def prepare_round(round_id, steps_dir, jobstore_dir, rounds_dir):
-    round_path = "{}/rounds/{}".format(round_id, round_id)
-    pathlib.Path(round_path).mkdir(parents=True, exist_ok=True)
+def prepare_round(steps_dir, jobstore_dir, rounds_dir):
+    pathlib.Path(rounds_dir).mkdir(parents=True, exist_ok=True)
 
-    os.symlink(src=jobstore_dir, dst=round_path, target_is_directory=True)
-    os.symlink(src=steps_dir, dst=round_path, target_is_directory=True)
-
-    return round_path
+    os.symlink(src=jobstore_dir, dst=rounds_dir, target_is_directory=True)
+    os.symlink(src=steps_dir, dst=rounds_dir, target_is_directory=True)
 
 
 def append(filename, line):
@@ -44,15 +41,17 @@ def parse_alignment(lines, line_number, steps_dir, jobstore_dir, rounds_dir):
 
         if line.startswith(STRING_TABLE["round"]):
             round_id = line.split()[-1]
-            round_path = prepare_round(
+            round_path = "{}/rounds/{}".format(rounds_dir, round_id)
+            prepare_round(
                 steps_dir=steps_dir,
                 jobstore_dir=jobstore_dir,
-                rounds_dir=rounds_dir,
-                round_id=round_id,
+                round_path=round_path,
             )
 
             block_id = 0
             continue
+
+        assert "round_path" in locals()
 
         if line.startswith(STRING_TABLE["blast"]):
             block_filename = "{}/block-{}.txt".format(round_path, block_id)
