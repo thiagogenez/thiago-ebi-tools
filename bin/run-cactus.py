@@ -73,6 +73,9 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
                 round_path = "{}/alignments/{}".format(task_dir, round_id)
                 create_symlinks(src_dirs=symlink_dirs, dest=round_path)
 
+                all_blast_commands_filename = "{}/all-blast.txt".format(round_path)
+                all_align_commands_filename = "{}/all-align.txt".format(round_path)
+                all_hal2fa_commands_filename = "{}/all-hal2fasta.txt".format(round_path)
                 # go to the next line
                 continue
 
@@ -85,6 +88,12 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             # create block filename
             commands_filename = "{}/{}.txt".format(round_path, anc_id)
 
+        if 'cactus-blast' in line:
+            append(filename=all_blast_commands_filename, line=line)
+        elif 'cactus-align' in line:
+            append(filename=all_align_commands_filename, line=line)
+        elif 'hal2fasta' in line:
+            append(filename=all_hal2fa_commands_filename, line=line)
         # write the current command-line in the file
         append(filename=commands_filename, line=line)
 
@@ -180,7 +189,7 @@ if __name__ == "__main__":
 
         parse(
             read_func=read_func,
-            symlink_dirs=[args.steps_dir, args.jobstore_dir],
+            symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
             task_name="alignment",
             task_dir=args.alignments_dir,
             stop_condition=STRING_TABLE["merging"],
