@@ -13,7 +13,7 @@ try:
     from Bio import Phylo
 except ModuleNotFoundError as err:
     print(err)
-    print('Please, run "pip install PyYAML" to install PyYAML module')
+    print('Please, run "pip install biopython" to install Biopython module')
     exit(1)
 
 
@@ -192,7 +192,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--assemblies",
+        "--assemblies_dir",
         type=str,
         required=True,
         help="Directory where FASTA files are localised",
@@ -219,7 +219,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--output",
+        "--output_dir",
         type=str,
         default=None,
         help="The location where the output file (aka cactus input file) will be stored",
@@ -228,11 +228,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # parse the fasta files
-    assemblies_content = assemblies_parser(dest=args.assemblies, ext=args.extension)
+    assemblies_content = assemblies_parser(dest=args.assemblies_dir, ext=args.extension)
 
     # parse the tree and create the cactus input file
     tree_content = tree_parser(
-        filename=args.tree, format=args.format, output=args.output
+        filename=args.tree, format=args.format, output=args.output_dir
     )
 
     # sanity check
