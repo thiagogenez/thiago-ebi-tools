@@ -30,6 +30,10 @@ def assemblies_parser(dest, ext):
     """
     dest = os.path.abspath(dest)
 
+    # sanity check
+    ext = re.sub("\\W+|_", "", ext).lower()
+    ext = '.' + ext
+
     try:
         filenames = os.listdir(dest)
     except FileNotFoundError as err:
@@ -42,11 +46,16 @@ def assemblies_parser(dest, ext):
 
             key = re.sub("\\W+|_", "", filename).lower()
 
+            # sanity check
+            assert key not in content
+
             content[key] = {
                 "path": "{}/{}".format(dest, filename),
                 "name": filename.rsplit(ext, 1)[0],
                 "used": False,
             }
+        else:
+            print('filename {} does not end with {}, thus it has been ignored'.format(filename, ext))
 
     return content
 
@@ -180,9 +189,13 @@ def add_header(
                 qtd_files - len(unused_filenames), qtd_terminals
             )
         )
-        f.write("\n# Files not used: \n")
-        for fasta in unused_filenames:
-            f.write("# {} {}\n".format(fasta["name"], fasta["path"]))
+        f.write("\n# Files not used: ")
+        if len(unused_filenames) == 0:
+            f.write("None\n")
+        else:
+            f.write("\n")
+            for fasta in unused_filenames:
+                f.write("# {} {}\n".format(fasta["name"], fasta["path"]))
         f.write("#\n")
         f.write(new_content)
 
