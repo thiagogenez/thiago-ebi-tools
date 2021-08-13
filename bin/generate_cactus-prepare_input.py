@@ -32,7 +32,7 @@ def assemblies_parser(dest, ext):
 
     # sanity check
     ext = re.sub("\\W+|_", "", ext).lower()
-    ext = '.' + ext
+    ext = "." + ext
 
     try:
         filenames = os.listdir(dest)
@@ -55,7 +55,11 @@ def assemblies_parser(dest, ext):
                 "used": False,
             }
         else:
-            print('filename {} does not end with {}, thus it has been ignored'.format(filename, ext))
+            print(
+                "filename {} does not end with {}, thus it has been ignored".format(
+                    filename, ext
+                )
+            )
 
     return content
 
