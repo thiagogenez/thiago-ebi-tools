@@ -94,6 +94,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
                 all_blast_commands_filename = "{}/all-blast.txt".format(round_path)
                 all_align_commands_filename = "{}/all-align.txt".format(round_path)
                 all_hal2fa_commands_filename = "{}/all-hal2fasta.txt".format(round_path)
+                
                 # go to the next line
                 continue
 
@@ -101,7 +102,10 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             assert "round_path" in locals()
 
             # get Anc_id from the current command-line
-            anc_id = re.findall("Anc[0-9]+", line)[0]
+            if 'hal2fasta':
+                anc_id = re.findall("(.*) --hdf5InMemory",line)[0].split()[-1]
+            else:
+                anc_id = re.findall("--root (.*)$",line)[0].split()[0]
 
             # create block filename
             commands_filename = "{}/{}.txt".format(round_path, anc_id)
@@ -112,6 +116,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             append(filename=all_align_commands_filename, line=line)
         elif 'hal2fasta' in line:
             append(filename=all_hal2fa_commands_filename, line=line)
+        
         # write the current command-line in the file
         append(filename=commands_filename, line=line)
 
@@ -160,7 +165,7 @@ if __name__ == "__main__":
         type=str,
         default=os.getcwd(),
         required=False,
-        help="Location of the aligment directory",
+        help="Location of the alignment directory",
     )
     parser.add_argument(
         "--preprocessor_dir",
