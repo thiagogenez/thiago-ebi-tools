@@ -20,19 +20,28 @@ STRING_TABLE = {
 
 
 def create_symlinks(src_dirs, dest):
+    """Create relative symbolic links
+
+    Args:
+        @src_dirs: list of source directory for symlink generation
+        @dest: where the symlink must be created 
+    """
     pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
 
     for i in src_dirs:
         relativepath = os.path.relpath(i, dest)
         fromfolderWithFoldername = dest + "/" + os.path.basename(i)
-        # print('dest={}, i={}, os.path.basename(i)={}'.format(dest, i, os.path.basename(i)))
-        # print('fromfolderWithFoldername: '+fromfolderWithFoldername)
-        # print('relativepath: '+ relativepath)
-        # exit(0)
         os.symlink(src=relativepath, dst=fromfolderWithFoldername)
 
 
 def append(filename, line):
+    """Append content to a file
+
+    Args:
+        @filename: the name of the file to append information
+        @line: string to append in the file as a line
+    """
+    
     if line:
         with open(filename, mode="a") as f:
             if f.tell() > 0:
@@ -41,6 +50,15 @@ def append(filename, line):
 
 
 def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
+    """Main function to parse the output file of Cactus-prepare
+
+    Args:
+        @read_func: pointer to the function that yields input lines
+        @symlink_dirs: list of directories (as source) for symlink creation
+        @task_dir: the directory to save parser's output
+        @task_name: parser rule name (preprocessor, alignment, merging)
+        @stop_condition: the condition to stop this parser
+    """
 
     if "alignment" not in task_name:
         path = "{}/{}".format(task_dir, task_name)
@@ -99,6 +117,11 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
 
 
 def read_file(filename):
+    """Function to read a file
+
+    Args:
+        @filename: The name of the file to read
+    """    
     with open(filename, mode="r") as f:
         while True:
             line = f.readline()
