@@ -102,7 +102,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             assert "round_path" in locals()
 
             # get Anc_id from the current command-line
-            if 'hal2fasta':
+            if 'hal2fasta' in line:
                 anc_id = re.findall("(.*) --hdf5InMemory",line)[0].split()[-1]
             else:
                 anc_id = re.findall("--root (.*)$",line)[0].split()[0]
