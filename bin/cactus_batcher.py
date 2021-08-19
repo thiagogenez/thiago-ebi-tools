@@ -69,7 +69,7 @@ def create_symlinks(src_dirs, dest):
     for i in src_dirs:
         relativepath = os.path.relpath(i, dest)
         fromfolderWithFoldername = dest + "/" + os.path.basename(i)
-        symlink(target=relativepath, link_name=fromfolderWithFoldername)
+        symlink(target=relativepath, link_name=fromfolderWithFoldername, overwrite=True)
 
 
 def append(filename, line):
