@@ -18,12 +18,15 @@ STRING_TABLE = {
     "preprocessor": "## Preprocessor",
 }
 
+
 def symlink(target, link_name, overwrite=False):
-    '''
+    """
     Create a symbolic link named link_name pointing to target.
     If link_name exists then FileExistsError is raised, unless overwrite=True.
     When trying to overwrite a directory, IsADirectoryError is raised.
-    '''
+
+    Credit: https://stackoverflow.com/a/55742015/825924
+    """
 
     if not overwrite:
         os.symlink(target, link_name)
@@ -49,7 +52,9 @@ def symlink(target, link_name, overwrite=False):
     try:
         # Pre-empt os.replace on a directory with a nicer message
         if not os.path.islink(link_name) and os.path.isdir(link_name):
-            raise IsADirectoryError(f"Cannot symlink over existing directory: '{link_name}'")
+            raise IsADirectoryError(
+                f"Cannot symlink over existing directory: '{link_name}'"
+            )
         os.replace(temp_link_name, link_name)
     except:
         if os.path.islink(temp_link_name):
@@ -62,7 +67,7 @@ def create_symlinks(src_dirs, dest):
 
     Args:
         @src_dirs: list of source directory for symlink generation
-        @dest: where the symlink must be created 
+        @dest: where the symlink must be created
     """
     pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
 
@@ -79,7 +84,7 @@ def append(filename, line):
         @filename: the name of the file to append information
         @line: string to append in the file as a line
     """
-    
+
     if line:
         with open(filename, mode="a") as f:
             if f.tell() > 0:
@@ -132,7 +137,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
                 all_blast_commands_filename = "{}/all-blast.txt".format(round_path)
                 all_align_commands_filename = "{}/all-align.txt".format(round_path)
                 all_hal2fa_commands_filename = "{}/all-hal2fasta.txt".format(round_path)
-                
+
                 # go to the next line
                 continue
 
@@ -140,21 +145,21 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             assert "round_path" in locals()
 
             # get Anc_id from the current command-line
-            if 'hal2fasta' in line:
-                anc_id = re.findall("(.*) --hdf5InMemory",line)[0].split()[-1]
+            if "hal2fasta" in line:
+                anc_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1]
             else:
-                anc_id = re.findall("--root (.*)$",line)[0].split()[0]
+                anc_id = re.findall("--root (.*)$", line)[0].split()[0]
 
             # create block filename
             commands_filename = "{}/{}.txt".format(round_path, anc_id)
 
-        if 'cactus-blast' in line:
+        if "cactus-blast" in line:
             append(filename=all_blast_commands_filename, line=line)
-        elif 'cactus-align' in line:
+        elif "cactus-align" in line:
             append(filename=all_align_commands_filename, line=line)
-        elif 'hal2fasta' in line:
+        elif "hal2fasta" in line:
             append(filename=all_hal2fa_commands_filename, line=line)
-        
+
         # write the current command-line in the file
         append(filename=commands_filename, line=line)
 
@@ -164,7 +169,7 @@ def read_file(filename):
 
     Args:
         @filename: The name of the file to read
-    """    
+    """
     with open(filename, mode="r") as f:
         while True:
             line = f.readline()
