@@ -91,6 +91,7 @@ def append(filename, line):
                 f.write("\n")
             f.write(line.strip())
 
+def create_scheduler_slurm_job():
 
 def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
     """Main function to parse the output file of Cactus-prepare
@@ -103,10 +104,17 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
         @stop_condition: the condition to stop this parser
     """
 
+    # dict to point to BASH files
+    bash_files = {}
+
+    # preamble
     if "alignment" not in task_name:
         path = "{}/{}".format(task_dir, task_name)
+        commands_filename = "{}/batches/all/commands.sh".format(path)
+
+        # create links needed for execution
         create_symlinks(src_dirs=symlink_dirs, dest=path)
-        commands_filename = "{}/commands.txt".format(path)
+        
 
     while True:
         # get the next line
@@ -119,7 +127,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
         # strip the line
         line = line.strip()
 
-        # empty line, next
+        # empty line, get the next one ...
         if not line:
             continue
 
@@ -127,16 +135,25 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
         if stop_condition and line.startswith(stop_condition):
             break
 
+        # get the cactus command
+        command_key = line[0]
+
+        bash_files[]
+
         if "alignment" in task_name:
             # create a new round directory
             if line.startswith(STRING_TABLE["round"]):
                 round_id = line.split()[-1]
                 round_path = "{}/alignments/{}".format(task_dir, round_id)
+                
+                # create links needed for execution
                 create_symlinks(src_dirs=symlink_dirs, dest=round_path)
 
-                all_blast_commands_filename = "{}/all-blast.txt".format(round_path)
-                all_align_commands_filename = "{}/all-align.txt".format(round_path)
-                all_hal2fa_commands_filename = "{}/all-hal2fasta.txt".format(round_path)
+                bash_files.update({
+                    'cactus-blast': "{}/batches/all/blast.sh".format(round_path),
+                    'cactus-align':  "{}/batches/all/align.sh".format(round_path),
+                    'hal2fasta': "{}/batches/all/hal2fasta.sh".format(round_path)
+                })
 
                 # go to the next line
                 continue
@@ -151,14 +168,10 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
                 anc_id = re.findall("--root (.*)$", line)[0].split()[0]
 
             # create block filename
-            commands_filename = "{}/{}.txt".format(round_path, anc_id)
+            commands_filename = "{}/batches/individual/{}.sh".format(round_path, anc_id)
 
-        if "cactus-blast" in line:
-            append(filename=all_blast_commands_filename, line=line)
-        elif "cactus-align" in line:
-            append(filename=all_align_commands_filename, line=line)
-        elif "hal2fasta" in line:
-            append(filename=all_hal2fa_commands_filename, line=line)
+        
+        append(filename=bash_files[key], line=line)
 
         # write the current command-line in the file
         append(filename=commands_filename, line=line)
@@ -233,8 +246,9 @@ if __name__ == "__main__":
         required=True,
         help="Location of the input directory",
     )
-    args = parser.parse_args()
 
+    # parse the args given
+    args = parser.parse_args()
     args.alignments_dir = os.path.abspath(args.alignments_dir)
     args.steps_dir = os.path.abspath(args.steps_dir)
     args.jobstore_dir = os.path.abspath(args.jobstore_dir)
@@ -242,7 +256,10 @@ if __name__ == "__main__":
     args.preprocessor_dir = os.path.abspath(args.preprocessor_dir)
     args.merging_dir = os.path.abspath(args.merging_dir)
 
+    # create pointer to the read function
     read_func = read_file(args.commands)
+
+    # read the commands.txt file
     while True:
         line = next(read_func, "")
         if not line:
