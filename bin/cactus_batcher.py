@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import pathlib
 import re
+from pathlib import Path
 
 STRING_TABLE = {
     "round": "### Round",
@@ -14,8 +15,8 @@ STRING_TABLE = {
     "blast": "cactus-blast",
     "hal2fasta": "hal2fasta",
     "merging": "## HAL merging",
-    "alignment": "## Alignment",
-    "preprocessor": "## Preprocessor",
+    "alignments": "## Alignment",
+    "preprocessors": "## Preprocessor",
 }
 
 
@@ -52,9 +53,7 @@ def symlink(target, link_name, overwrite=False):
     try:
         # Pre-empt os.replace on a directory with a nicer message
         if not os.path.islink(link_name) and os.path.isdir(link_name):
-            raise IsADirectoryError(
-                f"Cannot symlink over existing directory: '{link_name}'"
-            )
+            raise IsADirectoryError(f"Cannot symlink over existing directory: '{link_name}'")
         os.replace(temp_link_name, link_name)
     except:
         if os.path.islink(temp_link_name):
@@ -91,9 +90,7 @@ def append(filename, line):
                 f.write("\n")
             f.write(line.strip())
 
-def create_scheduler_slurm_job():
-
-def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
+def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")):
     """Main function to parse the output file of Cactus-prepare
 
     Args:
@@ -102,19 +99,22 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
         @task_dir: the directory to save parser's output
         @task_name: parser rule name (preprocessor, alignment, merging)
         @stop_condition: the condition to stop this parser
+        @extra_dirs: list of extra directories to be created inside of @task_dir 
     """
 
     # dict to point to BASH files
     bash_files = {}
-
-    # preamble
-    if "alignment" not in task_name:
-        path = "{}/{}".format(task_dir, task_name)
-        commands_filename = "{}/batches/all/commands.sh".format(path)
-
-        # create links needed for execution
-        create_symlinks(src_dirs=symlink_dirs, dest=path)
-        
+    
+    # preamble - create links needed for execution at task_dir
+    # for alignment step, these links must be created inside of each round  directory
+    if "alignments" not in task_name:
+        create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
+         
+        # create extra dirs at task_dir
+        for i in extra_dirs.values():
+            Path("{}/{}/{}".format(task_dir, task_name, i)).mkdir(parents=True, exist_ok=True)
+    else:
+        extra_dirs['rounds'] = 'sbatches/rounds' 
 
     while True:
         # get the next line
@@ -136,24 +136,28 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
             break
 
         # get the cactus command
-        command_key = line[0]
+        command_key = line.split()[0]
+        
+        if "preprocessor" in task_name:
+            jb_number = re.sub('\D', '', line.split()[1])
 
-        bash_files[]
+            # define the correcdt filenames to write the line
+            bash_files['all'] = "{}/{}/{}/{}.sh".format(task_dir, task_name, extra_dirs['all'], command_key)
+            bash_files['individual'] = "{}/{}/{}/{}-{}.sh".format(task_dir, task_name, extra_dirs['individual'], jb_number, command_key)
 
-        if "alignment" in task_name:
-            # create a new round directory
+        elif "alignments" in task_name:
+            
+            # preamble - create a new round directory
             if line.startswith(STRING_TABLE["round"]):
                 round_id = line.split()[-1]
-                round_path = "{}/alignments/{}".format(task_dir, round_id)
+                round_path = "{}/{}/{}".format(task_dir, task_name, round_id)
+                
+                # create extra dirs at task_dir 
+                for i in extra_dirs.values():
+                    Path("{}/{}".format(round_path, i)).mkdir(parents=True, exist_ok=True)
                 
                 # create links needed for execution
                 create_symlinks(src_dirs=symlink_dirs, dest=round_path)
-
-                bash_files.update({
-                    'cactus-blast': "{}/batches/all/blast.sh".format(round_path),
-                    'cactus-align':  "{}/batches/all/align.sh".format(round_path),
-                    'hal2fasta': "{}/batches/all/hal2fasta.sh".format(round_path)
-                })
 
                 # go to the next line
                 continue
@@ -163,18 +167,23 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition):
 
             # get Anc_id from the current command-line
             if "hal2fasta" in line:
-                anc_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1]
+                anc_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1] 
             else:
-                anc_id = re.findall("--root (.*)$", line)[0].split()[0]
+                anc_id = re.findall("--root (.*)$", line)[0].split()[0] 
+            
+            # define the correct filenames to write the line
+            bash_files['rounds'] = "{}/{}/{}.txt".format(round_path, extra_dirs['rounds'], anc_id) 
+            bash_files['all'] = "{}/{}/{}.sh".format(round_path, extra_dirs['all'], command_key)
+            bash_files['individual'] = "{}/{}/{}-{}.sh".format(round_path, extra_dirs['individual'], anc_id, command_key)
 
-            # create block filename
-            commands_filename = "{}/batches/individual/{}.sh".format(round_path, anc_id)
+        elif "merging":
+            bash_files['all'] = "{}/{}/{}/{}.sh".format(task_dir, task_name, extra_dirs['all'], command_key)
 
-        
-        append(filename=bash_files[key], line=line)
+        for i in bash_files.keys():
+            append(filename=bash_files[i], line=line)
 
         # write the current command-line in the file
-        append(filename=commands_filename, line=line)
+        #append(filename=commands_filename, line=line)
 
 
 def read_file(filename):
@@ -264,21 +273,21 @@ if __name__ == "__main__":
         line = next(read_func, "")
         if not line:
             break
-        if not line.startswith(STRING_TABLE["preprocessor"]):
+        if not line.startswith(STRING_TABLE["preprocessors"]):
             continue
 
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
-            task_name="preprocessor",
+            task_name="preprocessors",
             task_dir=args.preprocessor_dir,
-            stop_condition=STRING_TABLE["alignment"],
+            stop_condition=STRING_TABLE["alignments"],
         )
 
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
-            task_name="alignment",
+            task_name="alignments",
             task_dir=args.alignments_dir,
             stop_condition=STRING_TABLE["merging"],
         )
