@@ -61,6 +61,27 @@ def symlink(target, link_name, overwrite=False):
         raise
 
 
+def read_file(filename, line_number=False):
+    """Function to read a file
+
+    Args:
+        @filename: The name of the file to read
+        @line_number: return the number along with the line
+    """
+    with open(filename, mode="r") as f:
+        number = 0
+        while True:
+            line = f.readline()
+            if not line:
+                break
+            if line_number:
+                yield line, number
+                number = number + 1
+            else:
+                yield line
+
+
+
 def create_symlinks(src_dirs, dest):
     """Create relative symbolic links
 
@@ -90,7 +111,7 @@ def append(filename, line):
                 f.write("\n")
             f.write(line.strip())
 
-def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")):
+def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_dirs):
     """Main function to parse the output file of Cactus-prepare
 
     Args:
@@ -104,17 +125,17 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
 
     # dict to point to BASH files
     bash_files = {}
-    
-    # preamble - create links needed for execution at task_dir
-    # for alignment step, these links must be created inside of each round  directory
+
+    # Preamble - create links needed to execute Cactus at @task_dir
+    # For the alignment step, these links must be created inside of each round  directory - which is done inside of While loop
     if "alignments" not in task_name:
         create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
          
         # create extra dirs at task_dir
         for i in extra_dirs.values():
             Path("{}/{}/{}".format(task_dir, task_name, i)).mkdir(parents=True, exist_ok=True)
-    else:
-        extra_dirs['rounds'] = 'sbatches/rounds' 
+    
+    command_index = 0
 
     while True:
         # get the next line
@@ -137,13 +158,11 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
 
         # get the cactus command
         command_key = line.split()[0]
-        
-        if "preprocessor" in task_name:
-            jb_number = re.sub('\D', '', line.split()[1])
-
+         
+        if "preprocessor" in task_name: 
             # define the correcdt filenames to write the line
-            bash_files['all'] = "{}/{}/{}/{}.sh".format(task_dir, task_name, extra_dirs['all'], command_key)
-            bash_files['individual'] = "{}/{}/{}/{}-{}.sh".format(task_dir, task_name, extra_dirs['individual'], jb_number, command_key)
+            bash_files['all'] = "{}/{}/{}/{}.txt".format(task_dir, task_name, extra_dirs['all'], command_key)
+            bash_files['individual'] = "{}/{}/{}/{}-{}.txt".format(task_dir, task_name, extra_dirs['individual'], command_index, command_key)
 
         elif "alignments" in task_name:
             
@@ -171,33 +190,83 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
             else:
                 anc_id = re.findall("--root (.*)$", line)[0].split()[0] 
             
-            # define the correct filenames to write the line
-            bash_files['rounds'] = "{}/{}/{}.txt".format(round_path, extra_dirs['rounds'], anc_id) 
-            bash_files['all'] = "{}/{}/{}.sh".format(round_path, extra_dirs['all'], command_key)
-            bash_files['individual'] = "{}/{}/{}-{}.sh".format(round_path, extra_dirs['individual'], anc_id, command_key)
-
+            # update filenames to write the line
+            if "hal2fasta" not in command_key:
+                bash_files['ancestor'] = "{}/{}/{}.txt".format(round_path, extra_dirs['ancestor'], anc_id) 
+                bash_files['all'] = "{}/{}/{}.txt".format(round_path, extra_dirs['all'], command_key)
+                bash_files['individual'] = "{}/{}/{}-{}.txt".format(round_path, extra_dirs['individual'], anc_id, command_key)
+        
+        # update filenames to write the line
         elif "merging":
-            bash_files['all'] = "{}/{}/{}/{}.sh".format(task_dir, task_name, extra_dirs['all'], command_key)
+            bash_files['all'] = "{}/{}/{}/{}.txt".format(task_dir, task_name, extra_dirs['all'], command_key)
+            bash_files['individual'] = "{}/{}/{}/{}-{}.txt".format(task_dir, task_name, extra_dirs['individual'], command_index, command_key)
 
+        # write the line in the correct files
         for i in bash_files.keys():
             append(filename=bash_files[i], line=line)
 
-        # write the current command-line in the file
-        #append(filename=commands_filename, line=line)
+        # update index
+        command_index = command_index + 1
+       
 
+def get_slurm_submission(name, work_dir, log_dir, partition, gpus, cpus, commands, dependencies):
+    sbatch = ['sbatch', '--parsable']
+    sbatch.append('-J {}'.format(name))
+    sbatch.append('-D {}'.format(work_dir))
+    sbatch.append('-o {}/{}.out'.format(log_dir, name))
+    sbatch.append('-e {}/{}.err'.format(log_dir, name))
+    sbatch.append('-p {}'.format(partition))
+   
+    if gpus is not None:
+        sbatch.append('--gres=gpu:{}'.format(gpus))
 
-def read_file(filename):
-    """Function to read a file
+    if cpus is not None:
+        sbatch.append('-c {}'.format(cpus))
 
-    Args:
-        @filename: The name of the file to read
-    """
-    with open(filename, mode="r") as f:
-        while True:
-            line = f.readline()
-            if not line:
-                break
-            yield line
+    if dependencies is not None:
+        sbatch.append('--dependency=afterok:{}'.format(','.join(dependencies)))
+   
+    sbatch.append('--wrap \"{}\"'.format(';'.join(commands)))
+
+    return ' '.join(sbatch)
+
+def slurmify(task_dir, task_name, extra_dirs, resources):
+
+    for key, value in extra_dirs.items():
+        
+        # preprocessing and merging have the same logic to create sbatch command lines
+        if "alignments" not in task_name: 
+            
+            # get list of filenames
+            filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, value)), (None, None, []))[2]
+            
+            if 'all' in key:
+                for filename in filenames: 
+                    
+                    # create bash filename
+                    bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, os.path.splitext(filename)[0])
+                    
+                    # add shebang
+                    append(filename=bash_filename, line="#!/bin/bash")
+                     
+                    
+                    for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, value, filename), line_number=True):
+                        # get the cactus command
+                        command_key = line.split()[0] 
+                        parameters = {
+                             'name': '{}-{}'.format(task_name, line_number),
+                             'work_dir': '{}'.format(task_dir),
+                             'log_dir': '{}/{}'.format(task_dir, extra_dirs['logs']),
+                             'partition': '{}'.format(resources[command_key]['partition']),
+                             'cpus': '{}'.format(resources[command_key]['cpus']),
+                             'gpus': '{}'.format(resources[command_key]['gpus']),
+                             'commands': '{}'.format(line),
+                             'dependencies': None
+                        } 
+                        sbatch = get_slurm_submission(**parameters)
+                        print(sbatch)
+                        append(filename=bash_filename, line=sbatch) #elif 'invididual' in key:
+
 
 
 if __name__ == "__main__":
@@ -268,6 +337,14 @@ if __name__ == "__main__":
     # create pointer to the read function
     read_func = read_file(args.commands)
 
+    resources = {
+        'cactus-preprocess': {
+            'cpus': 8,
+            'gpus': 4,
+            'partition': 'gpu96'                 
+        }
+    }
+
     # read the commands.txt file
     while True:
         line = next(read_func, "")
@@ -279,23 +356,33 @@ if __name__ == "__main__":
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
-            task_name="preprocessors",
+            task_name="1-preprocessors",
             task_dir=args.preprocessor_dir,
             stop_condition=STRING_TABLE["alignments"],
+            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
+        )
+
+        slurmify(
+            task_dir=args.preprocessor_dir, 
+            task_name="1-preprocessors", 
+            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
+            resources=resources
         )
 
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
-            task_name="alignments",
+            task_name="2-alignments",
             task_dir=args.alignments_dir,
             stop_condition=STRING_TABLE["merging"],
+            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual", ancestor="sbatches/rounds")
         )
 
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir],
-            task_name="merging",
+            task_name="3-merging",
             task_dir=args.merging_dir,
             stop_condition=None,
+            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
         )
