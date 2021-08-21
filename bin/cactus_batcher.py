@@ -2,7 +2,7 @@
 
 import argparse
 import contextlib
-import os, tempfile
+import os, tempfile, stat
 import shutil
 import tempfile
 import pathlib
@@ -97,7 +97,7 @@ def create_symlinks(src_dirs, dest):
         symlink(target=relativepath, link_name=fromfolderWithFoldername, overwrite=True)
 
 
-def append(filename, line):
+def append(filename, line, mode="a"):
     """Append content to a file
 
     Args:
@@ -106,12 +106,20 @@ def append(filename, line):
     """
 
     if line:
-        with open(filename, mode="a") as f:
+        with open(filename, mode) as f:
             if f.tell() > 0:
                 f.write("\n")
             f.write(line.strip())
 
-def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_dirs):
+
+def mkdir(path):
+    if Path(path).exists():
+        shutil.rmtree(path)
+
+    Path(path).mkdir(parents=True, exist_ok=True)
+
+
+def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_dirs, ext="txt"):
     """Main function to parse the output file of Cactus-prepare
 
     Args:
@@ -133,10 +141,8 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
          
         # create extra dirs at task_dir
         for i in extra_dirs.values():
-            Path("{}/{}/{}".format(task_dir, task_name, i)).mkdir(parents=True, exist_ok=True)
+            mkdir("{}/{}/{}".format(task_dir, task_name, i))
     
-    command_index = 0
-
     while True:
         # get the next line
         line = next(read_func, None)
@@ -160,9 +166,10 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
         command_key = line.split()[0]
          
         if "preprocessor" in task_name: 
-            # define the correcdt filenames to write the line
-            bash_files['all'] = "{}/{}/{}/{}.txt".format(task_dir, task_name, extra_dirs['all'], command_key)
-            bash_files['individual'] = "{}/{}/{}/{}-{}.txt".format(task_dir, task_name, extra_dirs['individual'], command_index, command_key)
+            # define the correct filenames to write the line
+            input_names = re.search("--inputNames (.*?) --", line).group(1).replace(' ','_')
+            bash_files['all'] = "{}/{}/{}/{}.{}".format(task_dir, task_name, extra_dirs['all'], command_key, ext)
+            bash_files['individual'] = "{}/{}/{}/{}.{}".format(task_dir, task_name, extra_dirs['individual'], input_names, ext)
 
         elif "alignments" in task_name:
             
@@ -173,7 +180,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
                 
                 # create extra dirs at task_dir 
                 for i in extra_dirs.values():
-                    Path("{}/{}".format(round_path, i)).mkdir(parents=True, exist_ok=True)
+                    mkdir("{}/{}".format(round_path, i))
                 
                 # create links needed for execution
                 create_symlinks(src_dirs=symlink_dirs, dest=round_path)
@@ -192,24 +199,26 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
             
             # update filenames to write the line
             if "hal2fasta" not in command_key:
-                bash_files['ancestor'] = "{}/{}/{}.txt".format(round_path, extra_dirs['ancestor'], anc_id) 
-                bash_files['all'] = "{}/{}/{}.txt".format(round_path, extra_dirs['all'], command_key)
-                bash_files['individual'] = "{}/{}/{}-{}.txt".format(round_path, extra_dirs['individual'], anc_id, command_key)
+                bash_files['ancestor'] = "{}/{}/{}.{}".format(round_path, extra_dirs['ancestor'], anc_id, ext) 
+                bash_files['all'] = "{}/{}/{}.{}".format(round_path, extra_dirs['all'], command_key, ext)
+                bash_files['individual'] = "{}/{}/{}-{}.{}".format(round_path, extra_dirs['individual'], anc_id, command_key, ext)
         
         # update filenames to write the line
         elif "merging":
+            parentName = line.split()[3]
+            rootName = line.split()[4]
+
             bash_files['all'] = "{}/{}/{}/{}.txt".format(task_dir, task_name, extra_dirs['all'], command_key)
-            bash_files['individual'] = "{}/{}/{}/{}-{}.txt".format(task_dir, task_name, extra_dirs['individual'], command_index, command_key)
+            bash_files['individual'] = "{}/{}/{}/{}-{}.txt".format(task_dir, task_name, extra_dirs['individual'], parentName, rootName)
 
         # write the line in the correct files
         for i in bash_files.keys():
             append(filename=bash_files[i], line=line)
 
-        # update index
-        command_index = command_index + 1
        
 
 def get_slurm_submission(name, work_dir, log_dir, partition, gpus, cpus, commands, dependencies):
+    # sbatch command line
     sbatch = ['sbatch', '--parsable']
     sbatch.append('-J {}'.format(name))
     sbatch.append('-D {}'.format(work_dir))
@@ -226,11 +235,17 @@ def get_slurm_submission(name, work_dir, log_dir, partition, gpus, cpus, command
     if dependencies is not None:
         sbatch.append('--dependency=afterok:{}'.format(','.join(dependencies)))
    
-    sbatch.append('--wrap \"{}\"'.format(';'.join(commands)))
+    sbatch.append('--wrap \"{} --logFile {}/{}.txt\"'.format(';'.join(commands),log_dir, name))
 
     return ' '.join(sbatch)
 
-def slurmify(task_dir, task_name, extra_dirs, resources):
+
+def make_executable(path):
+    st = os.stat(path)
+    os.chmod(path, st.st_mode | stat.S_IEXEC)
+
+
+def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
 
     for key, value in extra_dirs.items():
         
@@ -240,33 +255,40 @@ def slurmify(task_dir, task_name, extra_dirs, resources):
             # get list of filenames
             filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, value)), (None, None, []))[2]
             
-            if 'all' in key:
+            if 'all' in key or 'individual' in key:
                 for filename in filenames: 
                     
-                    # create bash filename
-                    bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, os.path.splitext(filename)[0])
+                    bash_filename, file_extension = os.path.splitext(filename)
                     
+                    # sanity check
+                    if ext not in file_extension:
+                        continue
+
+                    # create bash filename
+                    bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, bash_filename)
+                   
                     # add shebang
-                    append(filename=bash_filename, line="#!/bin/bash")
-                     
+                    append(filename=bash_filename, mode="w", line="#!/bin/bash")
+                    
+                    # chmod +x on the bash script
+                    make_executable(path=bash_filename) 
                     
                     for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, value, filename), line_number=True):
                         # get the cactus command
                         command_key = line.split()[0] 
                         parameters = {
                              'name': '{}-{}'.format(task_name, line_number),
-                             'work_dir': '{}'.format(task_dir),
+                             'work_dir': '{}/{}'.format(task_dir, task_name),
                              'log_dir': '{}/{}'.format(task_dir, extra_dirs['logs']),
                              'partition': '{}'.format(resources[command_key]['partition']),
                              'cpus': '{}'.format(resources[command_key]['cpus']),
                              'gpus': '{}'.format(resources[command_key]['gpus']),
-                             'commands': '{}'.format(line),
+                             'commands': ['{}'.format(line.strip())],
                              'dependencies': None
                         } 
                         sbatch = get_slurm_submission(**parameters)
-                        print(sbatch)
-                        append(filename=bash_filename, line=sbatch) #elif 'invididual' in key:
-
+                        append(filename=bash_filename, line=sbatch) 
+        
 
 
 if __name__ == "__main__":
@@ -362,13 +384,6 @@ if __name__ == "__main__":
             extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
         )
 
-        slurmify(
-            task_dir=args.preprocessor_dir, 
-            task_name="1-preprocessors", 
-            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
-            resources=resources
-        )
-
         parse(
             read_func=read_func,
             symlink_dirs=[args.steps_dir, args.jobstore_dir, args.input_dir],
@@ -386,3 +401,13 @@ if __name__ == "__main__":
             stop_condition=None,
             extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
         )
+
+    # create slurm commands
+    slurmify(
+        task_dir=args.preprocessor_dir, 
+        task_name="1-preprocessors", 
+        extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
+        resources=resources
+    )
+
+ 
