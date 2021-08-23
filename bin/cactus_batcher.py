@@ -245,68 +245,77 @@ def make_executable(path):
 
 def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
 
-    for key, value in extra_dirs.items():
-        
+    if "alignments" in task_name:
+        rounds_dir = next(os.walk('{}/{}'.format(task_dir, task_name)), (None, None, []))[1]
+        dirs = list(map(lambda e: '{}/{}'.format(extra_dirs['all'],e), rounds_dir))
+        dirs.extend(list(map(lambda e: '{}/{}'.format(extra_dirs['individual'],e), rounds_dir)))
+    else:
+        dirs = [ 
+            extra_dirs['all'],
+            extra_dirs['individual']
+        ]
+    print(dirs)
+    for root_dir in dirs:    
+    
         # get list of filenames
-        filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, value)), (None, None, []))[2]
+        filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, root_dir)), (None, None, []))[2]
             
-        if 'all' in key or 'individual' in key:
-            for filename in filenames: 
+        for filename in filenames: 
                    
-                bash_filename, file_extension = os.path.splitext(filename)
+            bash_filename, file_extension = os.path.splitext(filename)
                     
-                # sanity check
-                if ext not in file_extension:
-                    continue
+            # sanity check
+            if ext not in file_extension:
+                continue
 
-                # create bash filename
-                bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, bash_filename)
+            # create bash filename
+            bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, root_dir, bash_filename)
                    
-                # add shebang
-                append(filename=bash_filename, mode="w", line="#!/bin/bash")
+            # add shebang
+            append(filename=bash_filename, mode="w", line="#!/bin/bash")
                     
-                # chmod +x on the bash script
-                make_executable(path=bash_filename) 
+            # chmod +x on the bash script
+            make_executable(path=bash_filename) 
                     
-                # dependency slurm variable
-                dependency_id = []
+            # dependency slurm variable
+            dependency_id = []
                     
-                for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, value, filename), line_number=True):
-                    # get the cactus command
-                    command_key = line.split()[0] 
+            for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, root_dir, filename), line_number=True):
+                # get the cactus command
+                command_key = line.split()[0] 
                         
-                    # remove rubbish 
-                    line = line.strip()
+                # remove rubbish 
+                line = line.strip()
  
-                    # set Cactus log for Toil
-                    if command_key != 'halAppendSubtree':
-                        line = line + ' --logFile {}/{}.txt'.format(extra_dirs['logs'], task_name) 
+                # set Cactus log for Toil
+                if command_key != 'halAppendSubtree':
+                    line = line + ' --logFile {}/{}.txt'.format(extra_dirs['logs'], task_name) 
                                               
                         
-                    parameters = {
-                         'name': '{}-{}'.format(task_name, line_number),
-                         'work_dir': '{}/{}'.format(task_dir, task_name),
-                         'log_dir': '{}'.format(extra_dirs['logs']),
-                         'partition': '{}'.format(resources[command_key]['partition']),
-                         'cpus': '{}'.format(resources[command_key]['cpus']),
-                         'gpus': '{}'.format(resources[command_key]['gpus']),
-                         'commands': ['{}'.format(line.strip())],
-                         'dependencies': dependency_id 
-                    }
+                parameters = {
+                     'name': '{}-{}'.format(task_name, line_number),
+                     'work_dir': '{}/{}'.format(task_dir, task_name),
+                     'log_dir': '{}'.format(extra_dirs['logs']),
+                     'partition': '{}'.format(resources[command_key]['partition']),
+                     'cpus': '{}'.format(resources[command_key]['cpus']),
+                     'gpus': '{}'.format(resources[command_key]['gpus']),
+                     'commands': ['{}'.format(line.strip())],
+                     'dependencies': dependency_id 
+                }
    
-                    # prepare slurm submission 
-                    sbatch = get_slurm_submission(**parameters)
+                # prepare slurm submission 
+                sbatch = get_slurm_submission(**parameters)
                         
-                    # create dependencies between slurm calls
-                    if command_key == 'halAppendSubtree':
-                        dependency_id.clear()
-                        dependency_id.append('task_{}_{}'.format(re.sub('\W+|\d+','',task_name),line_number)) 
-                        sbatch[0] = '{}=$(sbatch'.format(','.join(dependency_id))
-                        sbatch.append(')')
+                # create dependencies between slurm calls
+                if command_key == 'halAppendSubtree':
+                    dependency_id.clear()
+                    dependency_id.append('task_{}_{}'.format(re.sub('\W+|\d+','',task_name),line_number)) 
+                    sbatch[0] = '{}=$(sbatch'.format(','.join(dependency_id))
+                    sbatch.append(')')
 
                          
                         
-                    append(filename=bash_filename, line=' '.join(sbatch)) 
+                append(filename=bash_filename, line=' '.join(sbatch)) 
                         
                         
 
@@ -437,10 +446,19 @@ if __name__ == "__main__":
 
     # create slurm commands for merging
     slurmify(
+        task_dir=args.alignments_dir, 
+        task_name="2-alignments", 
+        extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
+        resources=resources
+    )
+
+    # create slurm commands for merging
+    slurmify(
         task_dir=args.merging_dir, 
         task_name="3-merging", 
         extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
         resources=resources
     )
+
 
 
