@@ -135,7 +135,7 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
     bash_files = {}
 
     # Preamble - create links needed to execute Cactus at @task_dir
-    # For the alignment step, these links must be created inside of each round  directory - which is done inside of While loop
+    # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
     if "alignments" not in task_name:
         create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
          
@@ -198,10 +198,8 @@ def parse(read_func, symlink_dirs, task_dir, task_name, stop_condition, extra_di
                 anc_id = re.findall("--root (.*)$", line)[0].split()[0] 
             
             # update filenames to write the line
-            if "hal2fasta" not in command_key:
-                bash_files['ancestor'] = "{}/{}/{}.{}".format(round_path, extra_dirs['ancestor'], anc_id, ext) 
-                bash_files['all'] = "{}/{}/{}.{}".format(round_path, extra_dirs['all'], command_key, ext)
-                bash_files['individual'] = "{}/{}/{}-{}.{}".format(round_path, extra_dirs['individual'], anc_id, command_key, ext)
+            bash_files['all'] = "{}/{}/{}.{}".format(round_path, extra_dirs['all'], anc_id, ext) 
+            bash_files['individual'] = "{}/{}/{}-{}.{}".format(round_path, extra_dirs['individual'], anc_id, command_key, ext)
         
         # update filenames to write the line
         elif "merging":
@@ -222,22 +220,22 @@ def get_slurm_submission(name, work_dir, log_dir, partition, gpus, cpus, command
     sbatch = ['sbatch', '--parsable']
     sbatch.append('-J {}'.format(name))
     sbatch.append('-D {}'.format(work_dir))
-    sbatch.append('-o {}/{}.out'.format(log_dir, name))
-    sbatch.append('-e {}/{}.err'.format(log_dir, name))
+    sbatch.append('-o {}/{}-%J.out'.format(log_dir, name))
+    sbatch.append('-e {}/{}-%J.err'.format(log_dir, name))
     sbatch.append('-p {}'.format(partition))
    
-    if gpus is not None:
+    if gpus is not None or gpus == 0:
         sbatch.append('--gres=gpu:{}'.format(gpus))
 
     if cpus is not None:
         sbatch.append('-c {}'.format(cpus))
 
-    if dependencies is not None:
-        sbatch.append('--dependency=afterok:{}'.format(','.join(dependencies)))
+    if dependencies is not None and len(dependencies) > 0:
+        sbatch.append('--dependency=afterok:${}'.format(',$'.join(dependencies)))
    
-    sbatch.append('--wrap \"{} --logFile {}/{}.txt\"'.format(';'.join(commands),log_dir, name))
+    sbatch.append('--wrap \"{}\"'.format(';'.join(commands)))
 
-    return ' '.join(sbatch)
+    return sbatch 
 
 
 def make_executable(path):
@@ -249,46 +247,68 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
 
     for key, value in extra_dirs.items():
         
-        # preprocessing and merging have the same logic to create sbatch command lines
-        if "alignments" not in task_name: 
+        # get list of filenames
+        filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, value)), (None, None, []))[2]
             
-            # get list of filenames
-            filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, value)), (None, None, []))[2]
-            
-            if 'all' in key or 'individual' in key:
-                for filename in filenames: 
-                    
-                    bash_filename, file_extension = os.path.splitext(filename)
-                    
-                    # sanity check
-                    if ext not in file_extension:
-                        continue
-
-                    # create bash filename
-                    bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, bash_filename)
+        if 'all' in key or 'individual' in key:
+            for filename in filenames: 
                    
-                    # add shebang
-                    append(filename=bash_filename, mode="w", line="#!/bin/bash")
+                bash_filename, file_extension = os.path.splitext(filename)
                     
-                    # chmod +x on the bash script
-                    make_executable(path=bash_filename) 
+                # sanity check
+                if ext not in file_extension:
+                    continue
+
+                # create bash filename
+                bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, value, bash_filename)
+                   
+                # add shebang
+                append(filename=bash_filename, mode="w", line="#!/bin/bash")
                     
-                    for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, value, filename), line_number=True):
-                        # get the cactus command
-                        command_key = line.split()[0] 
-                        parameters = {
-                             'name': '{}-{}'.format(task_name, line_number),
-                             'work_dir': '{}/{}'.format(task_dir, task_name),
-                             'log_dir': '{}/{}'.format(task_dir, extra_dirs['logs']),
-                             'partition': '{}'.format(resources[command_key]['partition']),
-                             'cpus': '{}'.format(resources[command_key]['cpus']),
-                             'gpus': '{}'.format(resources[command_key]['gpus']),
-                             'commands': ['{}'.format(line.strip())],
-                             'dependencies': None
-                        } 
-                        sbatch = get_slurm_submission(**parameters)
-                        append(filename=bash_filename, line=sbatch) 
-        
+                # chmod +x on the bash script
+                make_executable(path=bash_filename) 
+                    
+                # dependency slurm variable
+                dependency_id = []
+                    
+                for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, value, filename), line_number=True):
+                    # get the cactus command
+                    command_key = line.split()[0] 
+                        
+                    # remove rubbish 
+                    line = line.strip()
+ 
+                    # set Cactus log for Toil
+                    if command_key != 'halAppendSubtree':
+                        line = line + ' --logFile {}/{}.txt'.format(extra_dirs['logs'], task_name) 
+                                              
+                        
+                    parameters = {
+                         'name': '{}-{}'.format(task_name, line_number),
+                         'work_dir': '{}/{}'.format(task_dir, task_name),
+                         'log_dir': '{}'.format(extra_dirs['logs']),
+                         'partition': '{}'.format(resources[command_key]['partition']),
+                         'cpus': '{}'.format(resources[command_key]['cpus']),
+                         'gpus': '{}'.format(resources[command_key]['gpus']),
+                         'commands': ['{}'.format(line.strip())],
+                         'dependencies': dependency_id 
+                    }
+   
+                    # prepare slurm submission 
+                    sbatch = get_slurm_submission(**parameters)
+                        
+                    # create dependencies between slurm calls
+                    if command_key == 'halAppendSubtree':
+                        dependency_id.clear()
+                        dependency_id.append('task_{}_{}'.format(re.sub('\W+|\d+','',task_name),line_number)) 
+                        sbatch[0] = '{}=$(sbatch'.format(','.join(dependency_id))
+                        sbatch.append(')')
+
+                         
+                        
+                    append(filename=bash_filename, line=' '.join(sbatch)) 
+                        
+                        
 
 
 if __name__ == "__main__":
@@ -364,6 +384,11 @@ if __name__ == "__main__":
             'cpus': 8,
             'gpus': 4,
             'partition': 'gpu96'                 
+        },
+        'halAppendSubtree':{
+            'cpus': 1,
+            'gpus': None,
+            'partition': 'staff'
         }
     }
 
@@ -390,7 +415,7 @@ if __name__ == "__main__":
             task_name="2-alignments",
             task_dir=args.alignments_dir,
             stop_condition=STRING_TABLE["merging"],
-            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual", ancestor="sbatches/rounds")
+            extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
         )
 
         parse(
@@ -402,7 +427,7 @@ if __name__ == "__main__":
             extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual")
         )
 
-    # create slurm commands
+    # create slurm commands for cactus-preprocess
     slurmify(
         task_dir=args.preprocessor_dir, 
         task_name="1-preprocessors", 
@@ -410,4 +435,12 @@ if __name__ == "__main__":
         resources=resources
     )
 
- 
+    # create slurm commands for merging
+    slurmify(
+        task_dir=args.merging_dir, 
+        task_name="3-merging", 
+        extra_dirs=dict(logs="logs", all="sbatches/all", individual="sbatches/invididual"), 
+        resources=resources
+    )
+
+
