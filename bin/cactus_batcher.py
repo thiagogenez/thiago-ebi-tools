@@ -247,19 +247,26 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
 
     if "alignments" in task_name:
         rounds_dir = next(os.walk('{}/{}'.format(task_dir, task_name)), (None, None, []))[1]
-        dirs = list(map(lambda e: '{}/{}'.format(extra_dirs['all'],e), rounds_dir))
-        dirs.extend(list(map(lambda e: '{}/{}'.format(extra_dirs['individual'],e), rounds_dir)))
+        dirs = []
+
+        # HACKY: a better solution defitely exists!
+        for key in extra_dirs.keys():
+            if 'logs' not in key:
+                dirs.extend(list(map(lambda e: '{}/{}'.format(e, extra_dirs[key]), rounds_dir)))
     else:
         dirs = [ 
             extra_dirs['all'],
             extra_dirs['individual']
         ]
-    print(dirs)
+
+    # slurm job id for name purposes
+    job_id = 0
+
     for root_dir in dirs:    
     
         # get list of filenames
         filenames = next(os.walk('{}/{}/{}'.format(task_dir, task_name, root_dir)), (None, None, []))[2]
-            
+
         for filename in filenames: 
                    
             bash_filename, file_extension = os.path.splitext(filename)
@@ -271,7 +278,7 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
             # create bash filename
             bash_filename = '{}/{}/{}/{}.sh'.format(task_dir, task_name, root_dir, bash_filename)
                    
-            # add shebang
+            # add bash shebang
             append(filename=bash_filename, mode="w", line="#!/bin/bash")
                     
             # chmod +x on the bash script
@@ -280,7 +287,7 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
             # dependency slurm variable
             dependency_id = []
                     
-            for line, line_number in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, root_dir, filename), line_number=True):
+            for line in read_file(filename='{}/{}/{}/{}'.format(task_dir, task_name, root_dir, filename)):
                 # get the cactus command
                 command_key = line.split()[0] 
                         
@@ -293,7 +300,7 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
                                               
                         
                 parameters = {
-                     'name': '{}-{}'.format(task_name, line_number),
+                     'name': '{}-{}'.format(re.sub('\W+|\d+','',task_name), job_id),
                      'work_dir': '{}/{}'.format(task_dir, task_name),
                      'log_dir': '{}'.format(extra_dirs['logs']),
                      'partition': '{}'.format(resources[command_key]['partition']),
@@ -307,16 +314,16 @@ def slurmify(task_dir, task_name, extra_dirs, resources, ext='txt'):
                 sbatch = get_slurm_submission(**parameters)
                         
                 # create dependencies between slurm calls
-                if command_key == 'halAppendSubtree':
+                if command_key == 'halAppendSubtree' or command_key == 'cactus-blast' or command_key == 'cactus-align':
                     dependency_id.clear()
-                    dependency_id.append('task_{}_{}'.format(re.sub('\W+|\d+','',task_name),line_number)) 
+                    dependency_id.append('task_{}_{}'.format(re.sub('\W+|\d+','',task_name), job_id)) 
                     sbatch[0] = '{}=$(sbatch'.format(','.join(dependency_id))
-                    sbatch.append(')')
-
-                         
+                    sbatch.append(')')     
                         
                 append(filename=bash_filename, line=' '.join(sbatch)) 
-                        
+                
+                # job_id ++
+                job_id = job_id + 1
                         
 
 
@@ -394,6 +401,21 @@ if __name__ == "__main__":
             'gpus': 4,
             'partition': 'gpu96'                 
         },
+        'cactus-blast': {
+            'cpus': 8,
+            'gpus': 4,
+            'partition': 'gpu96'                 
+        },
+         'cactus-align': {
+            'cpus': 8,
+            'gpus': 4,
+            'partition': 'gpu96'                 
+        },
+        'hal2fasta':{
+            'cpus': 1,
+            'gpus': None,
+            'partition': 'staff'
+        }, 
         'halAppendSubtree':{
             'cpus': 1,
             'gpus': None,
