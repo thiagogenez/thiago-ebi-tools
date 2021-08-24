@@ -202,6 +202,7 @@ def parse(
     symlink_dirs,
     task_dir,
     task_name,
+    task_type,
     stop_condition,
     essential_dirs,
     ext="dat",
@@ -213,6 +214,7 @@ def parse(
         @symlink_dirs: list of directories (as source) for symlink creation
         @task_dir: the directory to save parser's output
         @task_name: parser rule name (preprocessor, alignment, merging)
+        @task_type: type of the given task
         @stop_condition: the condition to stop this parser
         @essential_dirs: list of extra directories to be created inside of @task_dir
     """
@@ -222,7 +224,7 @@ def parse(
 
     # Preamble - create links needed to execute Cactus at @task_dir
     # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
-    if "alignments" not in task_name:
+    if "alignments" == task_type:
         create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
 
         # create extra dirs at task_dir
@@ -248,22 +250,19 @@ def parse(
         if stop_condition and line.startswith(stop_condition):
             break
 
-        # get the cactus command
-        command_key = line.split()[0]
-
-        if "preprocessor" in task_name:
+        if "preprocessor" == task_type:
             # define the correct filenames to write the line
             input_names = (
                 re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
             )
-            bash_files["all"] = "{}/{}/{}/{}.{}".format(
-                task_dir, task_name, essential_dirs["all"], command_key, ext
+            bash_files["all"] = "{}/{}/{}/all-{}.{}".format(
+                task_dir, task_name, essential_dirs["all"], task_type, ext
             )
             bash_files["separated"] = "{}/{}/{}/{}.{}".format(
                 task_dir, task_name, essential_dirs["separated"], input_names, ext
             )
 
-        elif "alignments" in task_name:
+        elif "alignments" == task_type:
 
             # preamble - create a new round directory
             if line.startswith("### Round"):
@@ -294,16 +293,17 @@ def parse(
                 round_path, essential_dirs["all"], anc_id, ext
             )
             bash_files["separated"] = "{}/{}/{}-{}.{}".format(
-                round_path, essential_dirs["separated"], anc_id, command_key, ext
+                round_path, essential_dirs["separated"], anc_id, line.split()[0], ext
             )
 
         # update filenames to write the line
-        elif "merging":
+        elif "merging" == task_type:
+
             parentName = line.split()[3]
             rootName = line.split()[4]
 
-            bash_files["all"] = "{}/{}/{}/{}.{}".format(
-                task_dir, task_name, essential_dirs["all"], command_key, ext
+            bash_files["all"] = "{}/{}/{}/all-{}.{}".format(
+                task_dir, task_name, essential_dirs["all"], task_type, ext
             )
             bash_files["separated"] = "{}/{}/{}/{}-{}.{}".format(
                 task_dir, task_name, essential_dirs["separated"], parentName, rootName, ext
@@ -339,7 +339,10 @@ def get_slurm_submission(
     # sbatch command line
     sbatch = ["sbatch", "--parsable"]
     sbatch.append("-J {}".format(name))
-    sbatch.append("-D {}".format(work_dir))
+    
+    if work_dir is not None:
+        sbatch.append("-D {}".format(work_dir))
+    
     sbatch.append("-o {}/{}-%J.out".format(log_dir, name))
     sbatch.append("-e {}/{}-%J.err".format(log_dir, name))
     sbatch.append("-p {}".format(partition))
@@ -358,12 +361,13 @@ def get_slurm_submission(
     return sbatch
 
 
-def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
+def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat"):
     """Wraps each command line into a Slurm job
 
     Args:
         @task_dir: Location of the cactus task
         @task_name: Name of the cactus task
+        @task_type: type of the given task
         @essential_dirs: Essential directories where command lines are stored
         @resources: Slurm resources information
         @ext: Extension for the files that contains the command lines
@@ -371,19 +375,19 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
 
     dirs = [essential_dirs["all"], essential_dirs["separated"]]
 
-    if "alignments" in task_name:
-        rounds_dir = next(
+    if "alignments" == task_type:
+        round_dirs = next(
             os.walk("{}/{}".format(task_dir, task_name)), (None, None, [])
         )[1]
         dirs = []
 
-        # HACKY: a better solution defitely exists!
+        # HACKY: a better solution definitely exists!
         for key in essential_dirs.keys():
             if "logs" not in key:
                 dirs.extend(
                     list(
                         map(
-                            lambda e: "{}/{}".format(e, essential_dirs[key]), rounds_dir
+                            lambda e: "{}/{}".format(e, essential_dirs[key]), round_dirs
                         )
                     )
                 )
@@ -397,7 +401,7 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
         filenames = next(
             os.walk("{}/{}/{}".format(task_dir, task_name, root_dir)), (None, None, [])
         )[2]
-        print(filenames)
+        
         for filename in filenames:
 
             bash_filename, file_extension = os.path.splitext(filename)
@@ -429,13 +433,14 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
                 # remove rubbish
                 line = line.strip()
 
-                # set Cactus log for Toil
+                # set Cactus log file for Toil outputs
                 if command_key != "halAppendSubtree":
-                    line = line + " --logFile {}/{}.txt".format(
+                    line = line + " --logFile {}/{}.log".format(
                         essential_dirs["logs"], task_name
                     )
 
-                parameters = {
+                # prepare slurm submission
+                kwargs = {
                     "name": "{}-{}".format(re.sub("\W+|\d+", "", task_name), job_id),
                     "work_dir": "{}/{}".format(task_dir, task_name),
                     "log_dir": "{}".format(essential_dirs["logs"]),
@@ -445,9 +450,7 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
                     "commands": ["{}".format(line.strip())],
                     "dependencies": dependency_id,
                 }
-
-                # prepare slurm submission
-                sbatch = get_slurm_submission(**parameters)
+                sbatch = get_slurm_submission(**kwargs)
 
                 # create dependencies between slurm calls
                 if (
@@ -466,15 +469,67 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
 
                 # job_id ++
                 job_id = job_id + 1
+        
 
+    # glue round calls in one bash script
+    if "alignments" == task_type:
+        
+        # create a new directory
+        glue_script_filename = '{}/{}/{}'.format(task_dir, task_name, essential_dirs['all'])
+        mkdir(path=glue_script_filename, force=True)
 
-# def create_workflow_script():
+        # create a new bash script file there
+        glue_script_filename = '{}/{}.sh'.format(glue_script_filename, task_type)
+
+        # add bash shebang on it
+        append(filename=glue_script_filename, mode="w", line="#!/bin/bash")
+
+        # chmod +x on it
+        make_executable(path=glue_script_filename)
+
+        # sanity check for the local variable previously created 
+        assert "round_dirs" in locals()
+
+        for round_dir in round_dirs:
+            # get list of filenames
+            path = "{}/{}/{}/{}".format(task_dir, task_name, round_dir, essential_dirs['all'])
+            filenames = next(
+                os.walk(path), (None, None, [])
+            )[2]
+
+            # check all files
+            for ancestor_script in filenames:
+                
+                # update filename path
+                ancestor_script = '{}/{}'.format(path, ancestor_script)
+                
+                # filtering files that aren't executable
+                if os.path.isfile(ancestor_script) and not os.access(ancestor_script, os.X_OK):
+                    continue    
+
+                # get ancestor id that is the filename itself
+                anc_id = os.path.splitext(ancestor_script)[0]
+
+                # prepare slurm submission
+                kwargs = {
+                    "name": "task_{}-{}-{}".format(task_type, round_dir,anc_id),
+                    "work_dir": None,
+                    "log_dir": "{}".format(essential_dirs["logs"]),
+                    "partition": "{}".format(resources["regular"]["partition"]),
+                    "cpus": "{}".format(resources["regular"]["cpus"]),
+                    "gpus": "{}".format(resources["regular"]["gpus"]),
+                    "commands": glue_script_filename,
+                    "dependencies": None,
+                }
+                sbatch = get_slurm_submission(**kwargs)                
+
+def create_workflow_script(task_dir, ):
 
 
 if __name__ == "__main__":
 
     ###################################################################
-    ###                   PYTHON  ARGPARSE STEP                       ##
+    ###                   PYTHON  ARGPARSE STEP                      ##
     ###################################################################
 
     # parse the args given
@@ -554,7 +609,7 @@ if __name__ == "__main__":
 
         # starting parsing procedure
         for job in ["preprocessor", "alignments", "merging"]:
-            parse(**{"read_func": read_func, **parsing_data["jobs"][job]})
+            parse(**{"read_func": read_func, 'task_type': job, **parsing_data["jobs"][job]})
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -566,6 +621,7 @@ if __name__ == "__main__":
         "cactus-align": {"cpus": 8, "gpus": 4, "partition": "gpu96"},
         "hal2fasta": {"cpus": 1, "gpus": None, "partition": "staff"},
         "halAppendSubtree": {"cpus": 1, "gpus": None, "partition": "staff"},
+        "regular":{"cpus": 1, "gpus": None, "partition": "staff"}
     }
 
     slurm_data = {
@@ -594,4 +650,4 @@ if __name__ == "__main__":
     }
 
     for job in ["preprocessor", "alignments", "merging"]:
-        slurmify(**slurm_data[job])
+        slurmify(**{'task_type': job, **slurm_data[job]})
