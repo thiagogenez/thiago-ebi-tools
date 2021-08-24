@@ -172,37 +172,19 @@ def create_argparser():
         help="Location of the jobstore directory",
     )
     parser.add_argument(
-        "--alignments_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the alignment directory",
-    )
-    parser.add_argument(
-        "--preprocessor_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the preprocessor directory",
-    )
-    parser.add_argument(
-        "--merging_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the merging directory",
-    )
-    parser.add_argument(
         "--input_dir",
         metavar="PATH",
         type=str,
         required=True,
         help="Location of the input directory",
     )
-
+    parser.add_argument(
+        "--output_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the output directory",
+    )
     return parser
 
 
@@ -595,12 +577,10 @@ if __name__ == "__main__":
     args = create_argparser().parse_args()
 
     # get absolute path
-    args.alignments_dir = os.path.abspath(args.alignments_dir)
     args.steps_dir = os.path.abspath(args.steps_dir)
     args.jobstore_dir = os.path.abspath(args.jobstore_dir)
     args.input_dir = os.path.abspath(args.input_dir)
-    args.preprocessor_dir = os.path.abspath(args.preprocessor_dir)
-    args.merging_dir = os.path.abspath(args.merging_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
 
     # create pointer to the read function
     read_func = read_file(args.commands)
@@ -609,13 +589,15 @@ if __name__ == "__main__":
     ###               CACTUS-PREAPRE  PARSING STEP                   ##
     ###################################################################
 
+    task_order = ["preprocessor", "alignments", "merging"]
+
     # essential data for parsing function
     parsing_data = {
         "trigger_parsing": "## Preprocessor",
         "jobs": {
             "preprocessor": {
                 "task_name": "1-preprocessors",
-                "task_dir": args.preprocessor_dir,
+                "task_dir": args.output_dir,
                 "stop_condition": "## Alignment",
                 "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
                 "essential_dirs": {
@@ -626,7 +608,7 @@ if __name__ == "__main__":
             },
             "alignments": {
                 "task_name": "2-alignments",
-                "task_dir": args.alignments_dir,
+                "task_dir": args.output_dir,
                 "stop_condition": "## HAL merging",
                 "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
                 "essential_dirs": {
@@ -637,7 +619,7 @@ if __name__ == "__main__":
             },
             "merging": {
                 "task_name": "3-merging",
-                "task_dir": args.merging_dir,
+                "task_dir": args.output_dir,
                 "stop_condition": None,
                 "symlink_dirs": [
                     args.steps_dir,
@@ -667,7 +649,7 @@ if __name__ == "__main__":
             continue
 
         # starting parsing procedure
-        for job in ["preprocessor", "alignments", "merging"]:
+        for job in task_order:
             parse(
                 **{
                     "read_func": read_func,
@@ -715,7 +697,7 @@ if __name__ == "__main__":
         },
     }
 
-    for job in ["preprocessor", "alignments", "merging"]:
+    for job in task_order:
         slurmify(**{"task_type": job, **slurm_data[job]})
 
     ###################################################################
@@ -723,7 +705,8 @@ if __name__ == "__main__":
     ###################################################################
 
     workflow_data = {
-        "task_order": ["preprocessor", "alignments", "merging"],
+        "workflow_dir": args.output_dir,
+        "task_order": task_order,
         "tasks": {
             "preprocessor": {
                 "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
