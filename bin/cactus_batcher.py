@@ -496,7 +496,9 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
         # sanity check for the local variable previously created
         assert "round_dirs" in locals()
 
+        # check the bash scripts for each round
         for round_dir in round_dirs:
+
             # get list of filenames
             path = "{}/{}/{}/{}".format(
                 task_dir, task_name, round_dir, essential_dirs["all"]
@@ -504,19 +506,19 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
             filenames = next(os.walk(path), (None, None, []))[2]
 
             # check all files
-            for ancestor_script in filenames:
-
+            for filename in filenames:
+               
+                # get ancestor id that is the filename itself
+                anc_id = os.path.splitext(filename)[0]
+               
                 # update filename path
-                ancestor_script = "{}/{}".format(path, ancestor_script)
+                ancestor_script = "{}/{}".format(path, filename)
 
                 # filtering files that aren't executable
                 if os.path.isfile(ancestor_script) and not os.access(
                     ancestor_script, os.X_OK
                 ):
                     continue
-
-                # get ancestor id that is the filename itself
-                anc_id = os.path.splitext(ancestor_script)[0]
 
                 # prepare slurm submission
                 kwargs = {
@@ -526,11 +528,11 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                     "partition": "{}".format(resources["regular"]["partition"]),
                     "cpus": "{}".format(resources["regular"]["cpus"]),
                     "gpus": "{}".format(resources["regular"]["gpus"]),
-                    "commands": glue_script_filename,
+                    "commands": [ ancestor_script ],
                     "dependencies": None,
                 }
                 sbatch = get_slurm_submission(**kwargs)
-
+                append(filename=glue_script_filename, line=" ".join(sbatch))
 
 # def create_workflow_script(task_dir, ):
 
