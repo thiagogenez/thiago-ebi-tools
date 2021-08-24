@@ -348,7 +348,7 @@ def get_slurm_submission(
     sbatch.append("-e {}/{}-%J.err".format(log_dir, name))
     sbatch.append("-p {}".format(partition))
 
-    if gpus is not None or gpus == 0:
+    if gpus is not None:
         sbatch.append("--gres=gpu:{}".format(gpus))
 
     if cpus is not None:
@@ -441,8 +441,8 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                     "work_dir": "{}/{}".format(task_dir, task_name),
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources[command_key]["partition"]),
-                    "cpus": "{}".format(resources[command_key]["cpus"]),
-                    "gpus": "{}".format(resources[command_key]["gpus"]),
+                    "cpus": resources[command_key]["cpus"],
+                    "gpus": resources[command_key]["gpus"],
                     "commands": ["{}".format(line.strip())],
                     "dependencies": dependency_id,
                 }
@@ -513,8 +513,8 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                     "work_dir": None,
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources["regular"]["partition"]),
-                    "cpus": "{}".format(resources["regular"]["cpus"]),
-                    "gpus": "{}".format(resources["regular"]["gpus"]),
+                    "cpus": resources["regular"]["cpus"],
+                    "gpus": resources["regular"]["gpus"],
                     "commands": [ancestor_script],
                     "dependencies": None,
                 }
@@ -533,34 +533,37 @@ def create_workflow_script(
     for task_type in task_order:
 
         # adding preprocess
-        append(filename=workflow_scripts, line="{\n### - {} Step\n}".format(task_type))
+        append(filename=workflow_scripts, line="\n### - {} step\n".format(task_type))
 
         # get path path for all-{}.sh bash script
         path = "{}/{}/{}".format(
-            task[task_type]["task_dir"],
-            tasks[task_type],
+            tasks[task_type]["task_dir"],
+            tasks[task_type]["task_name"],
             tasks[task_type]["essential_dirs"]["all"],
         )
         filenames = next(os.walk(path), (None, None, []))[2]
-
+        
         # check all files
         for filename in filenames:
 
+            # update filename path
+            script = "{}/{}".format(path, filename)
+
             # filtering files that aren't executable
-            if os.path.isfile(ancestor_script) and not os.access(
-                ancestor_script, os.X_OK
+            if os.path.isfile(script) and not os.access(
+                script, os.X_OK
             ):
                 continue
 
             # prepare slurm submission
             kwargs = {
-                "name": "all_".format(task_type),
+                "name": "all_{}".format(task_type),
                 "work_dir": None,
                 "log_dir": "{}".format(tasks[task_type]["essential_dirs"]["logs"]),
                 "partition": "{}".format(resources["regular"]["partition"]),
-                "cpus": "{}".format(resources["regular"]["cpus"]),
-                "gpus": "{}".format(resources["regular"]["gpus"]),
-                "commands": [filename],
+                "cpus": resources["regular"]["cpus"],
+                "gpus": resources["regular"]["gpus"],
+                "commands": [ script ],
                 "dependencies": None,
             }
             sbatch = get_slurm_submission(**kwargs)
@@ -710,21 +713,20 @@ if __name__ == "__main__":
         "tasks": {
             "preprocessor": {
                 "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
+                "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
                 "essential_dirs": parsing_data["jobs"]["preprocessor"][
                     "essential_dirs"
-                ]["all"],
+                ],
             },
             "alignments": {
+                "task_name": parsing_data["jobs"]["alignments"]["task_name"],
                 "task_dir": parsing_data["jobs"]["alignments"]["task_dir"],
-                "essential_dirs": parsing_data["jobs"]["alignments"]["essential_dirs"][
-                    "all"
-                ],
+                "essential_dirs": parsing_data["jobs"]["alignments"]["essential_dirs"],
             },
             "merging": {
+                "task_name": parsing_data["jobs"]["merging"]["task_name"],
                 "task_dir": parsing_data["jobs"]["merging"]["task_dir"],
-                "essential_dirs": parsing_data["jobs"]["merging"]["essential_dirs"][
-                    "all"
-                ],
+                "essential_dirs": parsing_data["jobs"]["merging"]["essential_dirs"],
             },
         },
     }
