@@ -132,6 +132,20 @@ def make_executable(path):
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
+def create_bash_script(filename, shebang="#!/bin/bash"):
+    """Create executable bash script with shebang on it
+
+    Args:
+
+        @filename: Path of the file
+        @shebang: String containing bash shebang
+    """
+    append(filename=filename, mode="w", line=shebang)
+
+    # chmod +x on it
+    make_executable(path=filename)
+
+
 def create_argparser():
     """Create argparser object to parse the input for this script"""
 
@@ -193,7 +207,7 @@ def create_argparser():
 
 
 ###################################################################
-###               CACTUS-PREAPRE  PARSING STEP                   ##
+###               CACTUS-BATCHER  PARSING STEP                   ##
 ###################################################################
 
 
@@ -419,12 +433,7 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
             bash_filename = "{}/{}/{}/{}.sh".format(
                 task_dir, task_name, root_dir, bash_filename
             )
-
-            # add bash shebang
-            append(filename=bash_filename, mode="w", line="#!/bin/bash")
-
-            # chmod +x on the bash script
-            make_executable(path=bash_filename)
+            create_bash_script(filename=bash_filename)
 
             # dependency slurm variable
             dependency_id = []
@@ -478,20 +487,16 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
     # glue round calls in one bash script
     if "alignments" == task_type:
 
-        # create a new directory
-        glue_script_filename = "{}/{}/{}".format(
-            task_dir, task_name, essential_dirs["all"]
-        )
-        mkdir(path=glue_script_filename, force=True)
+        # create "log" and "script" directories for overall round directories
+        for i in ["logs", " all"]:
+            all_glued_scripts = "{}/{}/{}".format(
+                task_dir, task_name, essential_dirs[i]
+            )
+            mkdir(path=all_glued_scripts, force=True)
 
         # create a new bash script file there
-        glue_script_filename = "{}/{}.sh".format(glue_script_filename, task_type)
-
-        # add bash shebang on it
-        append(filename=glue_script_filename, mode="w", line="#!/bin/bash")
-
-        # chmod +x on it
-        make_executable(path=glue_script_filename)
+        all_glued_scripts = "{}/all-{}.sh".format(all_glued_scripts, task_type)
+        create_bash_script(filename=all_glued_scripts)
 
         # sanity check for the local variable previously created
         assert "round_dirs" in locals()
@@ -507,10 +512,10 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
 
             # check all files
             for filename in filenames:
-               
+
                 # get ancestor id that is the filename itself
                 anc_id = os.path.splitext(filename)[0]
-               
+
                 # update filename path
                 ancestor_script = "{}/{}".format(path, filename)
 
@@ -522,19 +527,60 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
 
                 # prepare slurm submission
                 kwargs = {
-                    "name": "task_{}-{}-{}".format(task_type, round_dir, anc_id),
+                    "name": "}-{}-{}".format(task_type, round_dir, anc_id),
                     "work_dir": None,
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources["regular"]["partition"]),
                     "cpus": "{}".format(resources["regular"]["cpus"]),
                     "gpus": "{}".format(resources["regular"]["gpus"]),
-                    "commands": [ ancestor_script ],
+                    "commands": [ancestor_script],
                     "dependencies": None,
                 }
                 sbatch = get_slurm_submission(**kwargs)
-                append(filename=glue_script_filename, line=" ".join(sbatch))
+                append(filename=all_glued_scripts, line=" ".join(sbatch))
 
-# def create_workflow_script(task_dir, ):
+
+def create_workflow_script(
+    task_dir, task_types, tasks, workflow_name="run-cactus-workflow"
+):
+
+    # create a new bash script file there
+    workflow_scripts = "{}/{}.sh".format(task_dir, workflow_name)
+    create_bash_script(filename=workflow_scripts)
+
+    for task_type in task_types:
+
+        # adding preprocess
+        append(filename=workflow_scripts, line="{\n### - {} Step\n}".format(task_type))
+
+        # get path path for all-{}.sh bash script
+        path = "{}/{}/{}".format(
+            task_dir, tasks[task_type], tasks[task_type]["essential_dirs"]["all"]
+        )
+        filenames = next(os.walk(path), (None, None, []))[2]
+
+        # check all files
+        for filename in filenames:
+
+            # filtering files that aren't executable
+            if os.path.isfile(ancestor_script) and not os.access(
+                ancestor_script, os.X_OK
+            ):
+                continue
+
+            # prepare slurm submission
+            kwargs = {
+                "name": "all_".format(task_type),
+                "work_dir": None,
+                "log_dir": "{}".format(tasks[task_type]["essential_dirs"]["logs"]),
+                "partition": "{}".format(resources["regular"]["partition"]),
+                "cpus": "{}".format(resources["regular"]["cpus"]),
+                "gpus": "{}".format(resources["regular"]["gpus"]),
+                "commands": [filename],
+                "dependencies": None,
+            }
+            sbatch = get_slurm_submission(**kwargs)
+            append(filename=workflow_scripts, line=" ".join(sbatch))
 
 
 if __name__ == "__main__":
@@ -669,3 +715,7 @@ if __name__ == "__main__":
 
     for job in ["preprocessor", "alignments", "merging"]:
         slurmify(**{"task_type": job, **slurm_data[job]})
+
+    ###################################################################
+    ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
+    ###################################################################
