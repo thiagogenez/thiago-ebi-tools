@@ -654,6 +654,7 @@ if __name__ == "__main__":
                 "cactus-blast": resources["cactus-blast"],
                 "cactus-align": resources["cactus-align"],
                 "hal2fasta": resources["hal2fasta"],
+                "regular": resources["regular"],
             },
         },
         "merging": {
