@@ -132,7 +132,7 @@ def parse(
     task_name,
     stop_condition,
     essential_dirs,
-    ext="txt",
+    ext="dat",
 ):
     """Main function to parse the output file of Cactus-prepare
 
@@ -267,7 +267,10 @@ def get_slurm_submission(
     return sbatch
 
 
-def slurmify(task_dir, task_name, essential_dirs, resources, ext="txt"):
+def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
+
+    print(essential_dirs)
+    dirs = [essential_dirs["all"], essential_dirs["separated"]]
 
     if "alignments" in task_name:
         rounds_dir = next(
@@ -285,8 +288,7 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="txt"):
                         )
                     )
                 )
-    else:
-        dirs = [essential_dirs["all"], essential_dirs["separated"]]
+
 
     # slurm job id for name purposes
     job_id = 0
@@ -513,7 +515,7 @@ if __name__ == "__main__":
 
         # starting parsing procedure
         for job in ["preprocessor", "alignments", "merging"]:
-            parse(**{"read_func": read_func, **parsing_data["jobs"]["job"]})
+            parse(**{"read_func": read_func, **parsing_data["jobs"][job]})
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -531,7 +533,7 @@ if __name__ == "__main__":
         "preprocessor": {
             "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
             "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
-            "essential_dirs": parsing_data["jobs"]["preprocessor"],
+            "essential_dirs": parsing_data["jobs"]["preprocessor"]['essential_dirs'],
             "resources": {"cactus-preprocess": resources["cactus-preprocess"]},
         },
         "alignments": {
@@ -551,6 +553,6 @@ if __name__ == "__main__":
             "resources": {"halAppendSubtree": resources["halAppendSubtree"]},
         },
     }
-
+    print(slurm_data)
     for job in ["preprocessor", "alignments", "merging"]:
         slurmify(**slurm_data[job])
