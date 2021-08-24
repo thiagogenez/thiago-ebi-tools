@@ -484,11 +484,11 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
         assert "round_dirs" in locals()
 
         # check the bash scripts for each round
-        for round_dir in round_dirs:
+        for round_id in round_dirs:
 
             # get list of filenames
             path = "{}/{}/{}/{}".format(
-                task_dir, task_name, round_dir, essential_dirs["all"]
+                task_dir, task_name, round_id, essential_dirs["all"]
             )
             filenames = next(os.walk(path), (None, None, []))[2]
 
@@ -507,20 +507,33 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                 ):
                     continue
 
+                # dependency slurm variable
+                dependency_id = None
+                
                 # prepare slurm submission
                 kwargs = {
-                    "name": "{}-{}-{}".format(task_type, round_dir, anc_id),
+                    "name": "{}-{}-{}".format(task_type, round_id, anc_id),
                     "work_dir": None,
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources["regular"]["partition"]),
                     "cpus": resources["regular"]["cpus"],
                     "gpus": resources["regular"]["gpus"],
                     "commands": [ancestor_script],
-                    "dependencies": None,
+                    "dependencies": dependency_id,
                 }
                 sbatch = get_slurm_submission(**kwargs)
+                
+                # create dependencies between slurm calls
+                dependency_id = "task_{}_{}".format(task_type,round_id)
+                sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
+                sbatch.append(")")
+
                 append(filename=all_glued_scripts, line=" ".join(sbatch))
 
+
+###################################################################
+###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
+###################################################################
 
 def create_workflow_script(
     workflow_dir, task_order, tasks, workflow_name="run-cactus-workflow"
@@ -555,6 +568,9 @@ def create_workflow_script(
             ):
                 continue
 
+            # dependency slurm variable
+            dependency_id = None
+
             # prepare slurm submission
             kwargs = {
                 "name": "all_{}".format(task_type),
@@ -564,11 +580,23 @@ def create_workflow_script(
                 "cpus": resources["regular"]["cpus"],
                 "gpus": resources["regular"]["gpus"],
                 "commands": [ script ],
-                "dependencies": None,
+                "dependencies": dependency_id,
             }
             sbatch = get_slurm_submission(**kwargs)
+
+            # create dependencies between slurm calls
+            dependency_id = "task_all_{}".format(task_type)
+            sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
+            sbatch.append(")")
+            
             append(filename=workflow_scripts, line=" ".join(sbatch))
 
+
+
+
+###################################################################
+###                             MAIN                             ##
+###################################################################
 
 if __name__ == "__main__":
 
