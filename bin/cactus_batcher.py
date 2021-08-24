@@ -509,7 +509,7 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
 
                 # prepare slurm submission
                 kwargs = {
-                    "name": "}-{}-{}".format(task_type, round_dir, anc_id),
+                    "name": "{}-{}-{}".format(task_type, round_dir, anc_id),
                     "work_dir": None,
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources["regular"]["partition"]),
