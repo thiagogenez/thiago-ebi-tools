@@ -302,11 +302,11 @@ def parse(
             parentName = line.split()[3]
             rootName = line.split()[4]
 
-            bash_files["all"] = "{}/{}/{}/{}.txt".format(
-                task_dir, task_name, essential_dirs["all"], command_key
+            bash_files["all"] = "{}/{}/{}/{}.{}".format(
+                task_dir, task_name, essential_dirs["all"], command_key, ext
             )
-            bash_files["separated"] = "{}/{}/{}/{}-{}.txt".format(
-                task_dir, task_name, essential_dirs["separated"], parentName, rootName
+            bash_files["separated"] = "{}/{}/{}/{}-{}.{}".format(
+                task_dir, task_name, essential_dirs["separated"], parentName, rootName, ext
             )
 
         # write the line in the correct files
@@ -397,7 +397,7 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
         filenames = next(
             os.walk("{}/{}/{}".format(task_dir, task_name, root_dir)), (None, None, [])
         )[2]
-
+        print(filenames)
         for filename in filenames:
 
             bash_filename, file_extension = os.path.splitext(filename)
