@@ -219,12 +219,12 @@ def parse(
         @essential_dirs: list of extra directories to be created inside of @task_dir
     """
 
-    # dict to point to BASH files
-    bash_files = {}
+    # dict to point to parsed files
+    parsed_files = {}
 
     # Preamble - create links needed to execute Cactus at @task_dir
     # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
-    if "alignments" == task_type:
+    if "alignments" != task_type:
         create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
 
         # create extra dirs at task_dir
@@ -255,10 +255,10 @@ def parse(
             input_names = (
                 re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
             )
-            bash_files["all"] = "{}/{}/{}/all-{}.{}".format(
+            parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
                 task_dir, task_name, essential_dirs["all"], task_type, ext
             )
-            bash_files["separated"] = "{}/{}/{}/{}.{}".format(
+            parsed_files["separated"] = "{}/{}/{}/{}.{}".format(
                 task_dir, task_name, essential_dirs["separated"], input_names, ext
             )
 
@@ -289,10 +289,10 @@ def parse(
                 anc_id = re.findall("--root (.*)$", line)[0].split()[0]
 
             # update filenames to write the line
-            bash_files["all"] = "{}/{}/{}.{}".format(
+            parsed_files["all"] = "{}/{}/{}.{}".format(
                 round_path, essential_dirs["all"], anc_id, ext
             )
-            bash_files["separated"] = "{}/{}/{}-{}.{}".format(
+            parsed_files["separated"] = "{}/{}/{}-{}.{}".format(
                 round_path, essential_dirs["separated"], anc_id, line.split()[0], ext
             )
 
@@ -302,10 +302,10 @@ def parse(
             parentName = line.split()[3]
             rootName = line.split()[4]
 
-            bash_files["all"] = "{}/{}/{}/all-{}.{}".format(
+            parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
                 task_dir, task_name, essential_dirs["all"], task_type, ext
             )
-            bash_files["separated"] = "{}/{}/{}/{}-{}.{}".format(
+            parsed_files["separated"] = "{}/{}/{}/{}-{}.{}".format(
                 task_dir,
                 task_name,
                 essential_dirs["separated"],
@@ -315,7 +315,7 @@ def parse(
             )
 
         # write the line in the correct files
-        for i in bash_files.keys():
+        for i in parsed_files.keys():
             append(filename=bash_files[i], line=line)
 
 
