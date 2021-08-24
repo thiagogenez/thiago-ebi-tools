@@ -488,7 +488,7 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
     if "alignments" == task_type:
 
         # create "log" and "script" directories for overall round directories
-        for i in ["logs", " all"]:
+        for i in ["logs", "all"]:
             all_glued_scripts = "{}/{}/{}".format(
                 task_dir, task_name, essential_dirs[i]
             )
@@ -541,21 +541,23 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
 
 
 def create_workflow_script(
-    task_dir, task_types, tasks, workflow_name="run-cactus-workflow"
+    workflow_dir, task_order, tasks, workflow_name="run-cactus-workflow"
 ):
 
     # create a new bash script file there
-    workflow_scripts = "{}/{}.sh".format(task_dir, workflow_name)
+    workflow_scripts = "{}/{}.sh".format(workflow_dir, workflow_name)
     create_bash_script(filename=workflow_scripts)
 
-    for task_type in task_types:
+    for task_type in task_order:
 
         # adding preprocess
         append(filename=workflow_scripts, line="{\n### - {} Step\n}".format(task_type))
 
         # get path path for all-{}.sh bash script
         path = "{}/{}/{}".format(
-            task_dir, tasks[task_type], tasks[task_type]["essential_dirs"]["all"]
+            task[task_type]["task_dir"],
+            tasks[task_type],
+            tasks[task_type]["essential_dirs"]["all"],
         )
         filenames = next(os.walk(path), (None, None, []))[2]
 
@@ -719,3 +721,28 @@ if __name__ == "__main__":
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
     ###################################################################
+
+    workflow_data = {
+        "task_order": ["preprocessor", "alignments", "merging"],
+        "tasks": {
+            "preprocessor": {
+                "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
+                "essential_dirs": parsing_data["jobs"]["preprocessor"][
+                    "essential_dirs"
+                ]["all"],
+            },
+            "alignments": {
+                "task_dir": parsing_data["jobs"]["alignments"]["task_dir"],
+                "essential_dirs": parsing_data["jobs"]["alignments"]["essential_dirs"][
+                    "all"
+                ],
+            },
+            "merging": {
+                "task_dir": parsing_data["jobs"]["merging"]["task_dir"],
+                "essential_dirs": parsing_data["jobs"]["merging"]["essential_dirs"][
+                    "all"
+                ],
+            },
+        },
+    }
+    create_workflow_script(**workflow_data)
