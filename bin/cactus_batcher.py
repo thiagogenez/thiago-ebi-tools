@@ -306,7 +306,12 @@ def parse(
                 task_dir, task_name, essential_dirs["all"], task_type, ext
             )
             bash_files["separated"] = "{}/{}/{}/{}-{}.{}".format(
-                task_dir, task_name, essential_dirs["separated"], parentName, rootName, ext
+                task_dir,
+                task_name,
+                essential_dirs["separated"],
+                parentName,
+                rootName,
+                ext,
             )
 
         # write the line in the correct files
@@ -339,10 +344,10 @@ def get_slurm_submission(
     # sbatch command line
     sbatch = ["sbatch", "--parsable"]
     sbatch.append("-J {}".format(name))
-    
+
     if work_dir is not None:
         sbatch.append("-D {}".format(work_dir))
-    
+
     sbatch.append("-o {}/{}-%J.out".format(log_dir, name))
     sbatch.append("-e {}/{}-%J.err".format(log_dir, name))
     sbatch.append("-p {}".format(partition))
@@ -401,7 +406,7 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
         filenames = next(
             os.walk("{}/{}/{}".format(task_dir, task_name, root_dir)), (None, None, [])
         )[2]
-        
+
         for filename in filenames:
 
             bash_filename, file_extension = os.path.splitext(filename)
@@ -469,17 +474,18 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
 
                 # job_id ++
                 job_id = job_id + 1
-        
 
     # glue round calls in one bash script
     if "alignments" == task_type:
-        
+
         # create a new directory
-        glue_script_filename = '{}/{}/{}'.format(task_dir, task_name, essential_dirs['all'])
+        glue_script_filename = "{}/{}/{}".format(
+            task_dir, task_name, essential_dirs["all"]
+        )
         mkdir(path=glue_script_filename, force=True)
 
         # create a new bash script file there
-        glue_script_filename = '{}/{}.sh'.format(glue_script_filename, task_type)
+        glue_script_filename = "{}/{}.sh".format(glue_script_filename, task_type)
 
         # add bash shebang on it
         append(filename=glue_script_filename, mode="w", line="#!/bin/bash")
@@ -487,32 +493,34 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
         # chmod +x on it
         make_executable(path=glue_script_filename)
 
-        # sanity check for the local variable previously created 
+        # sanity check for the local variable previously created
         assert "round_dirs" in locals()
 
         for round_dir in round_dirs:
             # get list of filenames
-            path = "{}/{}/{}/{}".format(task_dir, task_name, round_dir, essential_dirs['all'])
-            filenames = next(
-                os.walk(path), (None, None, [])
-            )[2]
+            path = "{}/{}/{}/{}".format(
+                task_dir, task_name, round_dir, essential_dirs["all"]
+            )
+            filenames = next(os.walk(path), (None, None, []))[2]
 
             # check all files
             for ancestor_script in filenames:
-                
+
                 # update filename path
-                ancestor_script = '{}/{}'.format(path, ancestor_script)
-                
+                ancestor_script = "{}/{}".format(path, ancestor_script)
+
                 # filtering files that aren't executable
-                if os.path.isfile(ancestor_script) and not os.access(ancestor_script, os.X_OK):
-                    continue    
+                if os.path.isfile(ancestor_script) and not os.access(
+                    ancestor_script, os.X_OK
+                ):
+                    continue
 
                 # get ancestor id that is the filename itself
                 anc_id = os.path.splitext(ancestor_script)[0]
 
                 # prepare slurm submission
                 kwargs = {
-                    "name": "task_{}-{}-{}".format(task_type, round_dir,anc_id),
+                    "name": "task_{}-{}-{}".format(task_type, round_dir, anc_id),
                     "work_dir": None,
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources["regular"]["partition"]),
@@ -521,9 +529,10 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                     "commands": glue_script_filename,
                     "dependencies": None,
                 }
-                sbatch = get_slurm_submission(**kwargs)                
+                sbatch = get_slurm_submission(**kwargs)
 
-def create_workflow_script(task_dir, ):
+
+# def create_workflow_script(task_dir, ):
 
 
 if __name__ == "__main__":
@@ -609,7 +618,13 @@ if __name__ == "__main__":
 
         # starting parsing procedure
         for job in ["preprocessor", "alignments", "merging"]:
-            parse(**{"read_func": read_func, 'task_type': job, **parsing_data["jobs"][job]})
+            parse(
+                **{
+                    "read_func": read_func,
+                    "task_type": job,
+                    **parsing_data["jobs"][job],
+                }
+            )
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -621,7 +636,7 @@ if __name__ == "__main__":
         "cactus-align": {"cpus": 8, "gpus": 4, "partition": "gpu96"},
         "hal2fasta": {"cpus": 1, "gpus": None, "partition": "staff"},
         "halAppendSubtree": {"cpus": 1, "gpus": None, "partition": "staff"},
-        "regular":{"cpus": 1, "gpus": None, "partition": "staff"}
+        "regular": {"cpus": 1, "gpus": None, "partition": "staff"},
     }
 
     slurm_data = {
@@ -650,4 +665,4 @@ if __name__ == "__main__":
     }
 
     for job in ["preprocessor", "alignments", "merging"]:
-        slurmify(**{'task_type': job, **slurm_data[job]})
+        slurmify(**{"task_type": job, **slurm_data[job]})
