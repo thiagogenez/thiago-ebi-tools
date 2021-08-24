@@ -316,7 +316,7 @@ def parse(
 
         # write the line in the correct files
         for i in parsed_files.keys():
-            append(filename=bash_files[i], line=line)
+            append(filename=parsed_files[i], line=line)
 
 
 ###################################################################
