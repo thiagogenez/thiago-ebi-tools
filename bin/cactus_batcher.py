@@ -10,9 +10,9 @@ import re
 from pathlib import Path
 
 
-#######################################################
-##                   Utility functions               ##
-#######################################################
+###################################################################
+###                    UTILITY   FUNCTIONS                       ##
+###################################################################
 
 
 def symlink(target, link_name, overwrite=False):
@@ -108,21 +108,93 @@ def append(filename, line, mode="a"):
             f.write(line.strip())
 
 
-def mkdir(path):
-    if Path(path).exists():
+def mkdir(path, force=False):
+    """Create a directory
+
+    Args:
+        @path: path to create directories
+        @force: if the directory exists, delete and recreate it
+
+    """
+    if force and Path(path).exists():
         shutil.rmtree(path)
 
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def make_executable(path):
+    """Make a file executable, e.g., chmod +x
+
+    Args:
+        @path: path to a file
+    """
     st = os.stat(path)
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-#######################################################
-##                   Batcher functions               ##
-#######################################################
+def create_argparser():
+    """Create argparser object to parse the input for this script"""
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--commands",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Output file from cactus-prepare command-line",
+    )
+    parser.add_argument(
+        "--steps_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the steps directory",
+    )
+    parser.add_argument(
+        "--jobstore_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the jobstore directory",
+    )
+    parser.add_argument(
+        "--alignments_dir",
+        metavar="PATH",
+        type=str,
+        default=os.getcwd(),
+        required=False,
+        help="Location of the alignment directory",
+    )
+    parser.add_argument(
+        "--preprocessor_dir",
+        metavar="PATH",
+        type=str,
+        default=os.getcwd(),
+        required=False,
+        help="Location of the preprocessor directory",
+    )
+    parser.add_argument(
+        "--merging_dir",
+        metavar="PATH",
+        type=str,
+        default=os.getcwd(),
+        required=False,
+        help="Location of the merging directory",
+    )
+    parser.add_argument(
+        "--input_dir",
+        metavar="PATH",
+        type=str,
+        required=True,
+        help="Location of the input directory",
+    )
+
+    return parser
+
+
+###################################################################
+###               CACTUS-PREAPRE  PARSING STEP                   ##
+###################################################################
 
 
 def parse(
@@ -155,7 +227,7 @@ def parse(
 
         # create extra dirs at task_dir
         for i in essential_dirs.values():
-            mkdir("{}/{}/{}".format(task_dir, task_name, i))
+            mkdir("{}/{}/{}".format(task_dir, task_name, i), force=True)
 
     while True:
         # get the next line
@@ -200,7 +272,7 @@ def parse(
 
                 # create extra dirs at task_dir
                 for i in essential_dirs.values():
-                    mkdir("{}/{}".format(round_path, i))
+                    mkdir("{}/{}".format(round_path, i), force=True)
 
                 # create links needed for execution
                 create_symlinks(src_dirs=symlink_dirs, dest=round_path)
@@ -242,9 +314,28 @@ def parse(
             append(filename=bash_files[i], line=line)
 
 
+###################################################################
+###                  SLURM BASH SCRIPT CREATOR                   ##
+###################################################################
+
+
 def get_slurm_submission(
     name, work_dir, log_dir, partition, gpus, cpus, commands, dependencies
 ):
+
+    """Prepare a Slurm string call
+
+    Args:
+        @name: name for the Slurm job
+        @word_dir: Location where the slurm should to to run the command
+        @log_dir: Path Cactus' log
+        @partition: Slurm partition name to dispatch the job
+        @gpus: Amount of GPUs to run the job
+        @cpus: Amount of CPUs to run the job
+        @commands: List of commands that the Slurm job must run
+        @dependencies: list of Job IDs that this job depends on
+    """
+
     # sbatch command line
     sbatch = ["sbatch", "--parsable"]
     sbatch.append("-J {}".format(name))
@@ -268,8 +359,16 @@ def get_slurm_submission(
 
 
 def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
+    """Wraps each command line into a Slurm job
 
-    print(essential_dirs)
+    Args:
+        @task_dir: Location of the cactus task
+        @task_name: Name of the cactus task
+        @essential_dirs: Essential directories where command lines are stored
+        @resources: Slurm resources information
+        @ext: Extension for the files that contains the command lines
+    """
+
     dirs = [essential_dirs["all"], essential_dirs["separated"]]
 
     if "alignments" in task_name:
@@ -288,7 +387,6 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
                         )
                     )
                 )
-
 
     # slurm job id for name purposes
     job_id = 0
@@ -371,65 +469,6 @@ def slurmify(task_dir, task_name, essential_dirs, resources, ext="dat"):
 
 
 # def create_workflow_script():
-
-
-def create_argparser():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--commands",
-        metavar="PATH",
-        type=str,
-        required=True,
-        help="Output file from cactus-prepare command-line",
-    )
-    parser.add_argument(
-        "--steps_dir",
-        metavar="PATH",
-        type=str,
-        required=True,
-        help="Location of the steps directory",
-    )
-    parser.add_argument(
-        "--jobstore_dir",
-        metavar="PATH",
-        type=str,
-        required=True,
-        help="Location of the jobstore directory",
-    )
-    parser.add_argument(
-        "--alignments_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the alignment directory",
-    )
-    parser.add_argument(
-        "--preprocessor_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the preprocessor directory",
-    )
-    parser.add_argument(
-        "--merging_dir",
-        metavar="PATH",
-        type=str,
-        default=os.getcwd(),
-        required=False,
-        help="Location of the merging directory",
-    )
-    parser.add_argument(
-        "--input_dir",
-        metavar="PATH",
-        type=str,
-        required=True,
-        help="Location of the input directory",
-    )
-
-    return parser
 
 
 if __name__ == "__main__":
@@ -533,7 +572,7 @@ if __name__ == "__main__":
         "preprocessor": {
             "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
             "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
-            "essential_dirs": parsing_data["jobs"]["preprocessor"]['essential_dirs'],
+            "essential_dirs": parsing_data["jobs"]["preprocessor"]["essential_dirs"],
             "resources": {"cactus-preprocess": resources["cactus-preprocess"]},
         },
         "alignments": {
@@ -553,6 +592,6 @@ if __name__ == "__main__":
             "resources": {"halAppendSubtree": resources["halAppendSubtree"]},
         },
     }
-    print(slurm_data)
+
     for job in ["preprocessor", "alignments", "merging"]:
         slurmify(**slurm_data[job])
