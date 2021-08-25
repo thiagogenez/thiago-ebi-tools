@@ -338,14 +338,14 @@ def get_slurm_submission(
     """
 
     # sbatch command line
-    sbatch = ["sbatch", "--parsable"]
+    sbatch = ["task_{}=$(sbatch".format(name), "--parsable"]
     sbatch.append("-J {}".format(name))
 
     if work_dir is not None:
         sbatch.append("-D {}".format(work_dir))
 
-    sbatch.append("-o {}/{}-%J.out".format(log_dir, name))
-    sbatch.append("-e {}/{}-%J.err".format(log_dir, name))
+    sbatch.append("-o {}/{}-%j.out".format(log_dir, name))
+    sbatch.append("-e {}/{}-%j.err".format(log_dir, name))
     sbatch.append("-p {}".format(partition))
 
     if gpus is not None:
@@ -355,14 +355,13 @@ def get_slurm_submission(
         sbatch.append("-c {}".format(cpus))
 
     if dependencies is not None and len(dependencies) > 0:
-        sbatch.append("--dependency=afterok:${}".format(",$".join(dependencies)))
+        sbatch.append("--dependency=afterok:${}".format(",$".join([ 'task_' + dep for dep in dependencies ])))
 
-    sbatch.append('--wrap "{}"'.format(";".join(commands)))
+    sbatch.append('--wrap "{}")'.format(";".join(commands)))
 
     return sbatch
 
-
-def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat"):
+def slurmify(task_dir, task_name, task_type, essential_dirs, resources, initial_dependencies, ext="dat"):
     """Wraps each command line into a Slurm job
 
     Args:
@@ -373,29 +372,29 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
         @resources: Slurm resources information
         @ext: Extension for the files that contains the command lines
     """
-
     dirs = [essential_dirs["all"], essential_dirs["separated"]]
 
-    if "alignments" == task_type:
-        round_dirs = next(
-            os.walk("{}/{}".format(task_dir, task_name)), (None, None, [])
-        )[1]
-        dirs = []
+    #if "alignments" == task_type:
+    #    round_dirs = next(
+    #        os.walk("{}/{}".format(task_dir, task_name)), (None, None, [])
+    #    )[1]
+    #    dirs = []
 
         # HACKY: a better solution definitely exists!
-        for key in essential_dirs.keys():
-            if "logs" not in key:
-                dirs.extend(
-                    list(
-                        map(
-                            lambda e: "{}/{}".format(e, essential_dirs[key]), round_dirs
-                        )
-                    )
-                )
+     #   for key in essential_dirs.keys():
+     #       if "logs" not in key:
+     #           dirs.extend(
+     #               list(
+     #                   map(
+     #                       lambda e: "{}/{}".format(e, essential_dirs[key]), round_dirs
+     #                   )
+     #               )
+     #           )
 
-    # slurm job id for name purposes
+    # job id for slurm task name and bash variable purposes
     job_id = 0
 
+    extra_dependencies = []
     for root_dir in dirs:
 
         # get list of filenames
@@ -418,7 +417,7 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
             create_bash_script(filename=bash_filename)
 
             # dependency slurm variable
-            dependency_id = []
+            intra_dependencies = list(initial_dependencies)
 
             for line in read_file(
                 filename="{}/{}/{}/{}".format(task_dir, task_name, root_dir, filename)
@@ -430,21 +429,25 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                 line = line.strip()
 
                 # set Cactus log file for Toil outputs
-                if command_key != "halAppendSubtree":
+                if command_key != "halAppendSubtree" or command_key != 'hal2fasta':
                     line = line + " --logFile {}/{}.log".format(
                         essential_dirs["logs"], task_name
                     )
 
+                job_name = "{}_{}".format(re.sub("\W+|\d+", "_", command_key), job_id)
+                
+                extra_dependencies.append(job_name)
+
                 # prepare slurm submission
                 kwargs = {
-                    "name": "{}-{}".format(re.sub("\W+|\d+", "", task_name), job_id),
+                    "name": job_name,
                     "work_dir": "{}/{}".format(task_dir, task_name),
                     "log_dir": "{}".format(essential_dirs["logs"]),
                     "partition": "{}".format(resources[command_key]["partition"]),
                     "cpus": resources[command_key]["cpus"],
                     "gpus": resources[command_key]["gpus"],
                     "commands": ["{}".format(line.strip())],
-                    "dependencies": dependency_id,
+                    "dependencies":  intra_dependencies ,
                 }
                 sbatch = get_slurm_submission(**kwargs)
 
@@ -454,12 +457,8 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                     or command_key == "cactus-blast"
                     or command_key == "cactus-align"
                 ):
-                    dependency_id.clear()
-                    dependency_id.append(
-                        "task_{}_{}".format(re.sub("\W+|\d+", "", task_name), job_id)
-                    )
-                    sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
-                    sbatch.append(")")
+                    intra_dependencies.clear()
+                    intra_dependencies.append(job_name)
 
                 append(filename=bash_filename, line=" ".join(sbatch))
 
@@ -467,70 +466,72 @@ def slurmify(task_dir, task_name, task_type, essential_dirs, resources, ext="dat
                 job_id = job_id + 1
 
     # glue round calls in one bash script
-    if "alignments" == task_type:
+    #if "alignments" == task_type:
 
         # create "log" and "script" directories for overall round directories
-        for i in ["logs", "all"]:
-            all_glued_scripts = "{}/{}/{}".format(
-                task_dir, task_name, essential_dirs[i]
-            )
-            mkdir(path=all_glued_scripts, force=True)
+    #    for i in ["logs", "all"]:
+    #       all_glued_scripts = "{}/{}/{}".format(
+    #            task_dir, task_name, essential_dirs[i]
+    #        )
+    #        mkdir(path=all_glued_scripts, force=True)
 
         # create a new bash script file there
-        all_glued_scripts = "{}/all-{}.sh".format(all_glued_scripts, task_type)
-        create_bash_script(filename=all_glued_scripts)
+    #    all_glued_scripts = "{}/all-{}.sh".format(all_glued_scripts, task_type)
+    #    create_bash_script(filename=all_glued_scripts)
 
         # sanity check for the local variable previously created
-        assert "round_dirs" in locals()
+    #    assert "round_dirs" in locals()
+
+        # dependency slurm variable
+     #   dependency_id = []
 
         # check the bash scripts for each round
-        for round_id in round_dirs:
+     #   for round_id in round_dirs:
 
             # get list of filenames
-            path = "{}/{}/{}/{}".format(
-                task_dir, task_name, round_id, essential_dirs["all"]
-            )
-            filenames = next(os.walk(path), (None, None, []))[2]
+      #      path = "{}/{}/{}/{}".format(
+      #          task_dir, task_name, round_id, essential_dirs["all"]
+       #     )
+       #     filenames = next(os.walk(path), (None, None, []))[2]
 
             # check all files
-            for filename in filenames:
+       #     for filename in filenames:
 
                 # get ancestor id that is the filename itself
-                anc_id = os.path.splitext(filename)[0]
+       #         anc_id = os.path.splitext(filename)[0]
 
                 # update filename path
-                ancestor_script = "{}/{}".format(path, filename)
+        #        ancestor_script = "{}/{}".format(path, filename)
 
                 # filtering files that aren't executable
-                if os.path.isfile(ancestor_script) and not os.access(
-                    ancestor_script, os.X_OK
-                ):
-                    continue
+        #        if os.path.isfile(ancestor_script) and not os.access(
+        #            ancestor_script, os.X_OK
+        #        ):
+        #            continue
 
-                # dependency slurm variable
-                dependency_id = None
-                
+                                
                 # prepare slurm submission
-                kwargs = {
-                    "name": "{}-{}-{}".format(task_type, round_id, anc_id),
-                    "work_dir": None,
-                    "log_dir": "{}".format(essential_dirs["logs"]),
-                    "partition": "{}".format(resources["regular"]["partition"]),
-                    "cpus": resources["regular"]["cpus"],
-                    "gpus": resources["regular"]["gpus"],
-                    "commands": [ancestor_script],
-                    "dependencies": dependency_id,
-                }
-                sbatch = get_slurm_submission(**kwargs)
+        #        kwargs = {
+        #            "name": "{}-{}-{}".format(task_type, round_id, anc_id),
+        #            "work_dir": None,
+        #            "log_dir": "{}".format(essential_dirs["logs"]),
+        #            "partition": "{}".format(resources["regular"]["partition"]),
+        #            "cpus": resources["regular"]["cpus"],
+        #            "gpus": resources["regular"]["gpus"],
+        #            "commands": [ancestor_script],
+        #            "dependencies": dependency_id,
+        #        }
+        #        sbatch = get_slurm_submission(**kwargs)
                 
                 # create dependencies between slurm calls
-                dependency_id = "task_{}_{}".format(task_type,round_id)
-                sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
-                sbatch.append(")")
+        #        dependency_id.clear()
+        #        dependency_id.append("task_{}_{}".format(task_type,round_id))
+        #        sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
+        #        sbatch.append(")")
 
-                append(filename=all_glued_scripts, line=" ".join(sbatch))
+         #       append(filename=all_glued_scripts, line=" ".join(sbatch))
 
-
+    return extra_dependencies
 ###################################################################
 ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
 ###################################################################
@@ -569,7 +570,7 @@ def create_workflow_script(
                 continue
 
             # dependency slurm variable
-            dependency_id = None
+            dependency_id = []
 
             # prepare slurm submission
             kwargs = {
@@ -585,7 +586,8 @@ def create_workflow_script(
             sbatch = get_slurm_submission(**kwargs)
 
             # create dependencies between slurm calls
-            dependency_id = "task_all_{}".format(task_type)
+            dependency_id.clear()
+            dependency_id.append("task_all_{}".format(task_type))
             sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
             sbatch.append(")")
             
@@ -728,8 +730,18 @@ if __name__ == "__main__":
         },
     }
 
+    dependencies = []
     for job in task_order:
-        slurmify(**{"task_type": job, **slurm_data[job]})
+        if "alignments" == job:
+            round_dirs = next(os.walk("{}/{}".format(slurm_data[job]['task_dir'], slurm_data[job]['task_name'])), (None, None, []))[1]
+            for round_id in round_dirs:
+                for key in parsing_data["jobs"]["alignments"]["essential_dirs"]:
+                    slurm_data[job]['essential_dirs'][key] = '{}/{}'.format(round_id, parsing_data["jobs"]["alignments"]["essential_dirs"][key])
+                print('thiago')
+                print(slurm_data[job]['essential_dirs'])
+                dependencies = slurmify(**{"task_type": job, "initial_dependencies":dependencies, **slurm_data[job]})               
+        else:
+            dependencies = slurmify(**{"task_type": job, "initial_dependencies":dependencies, **slurm_data[job]})
 
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
