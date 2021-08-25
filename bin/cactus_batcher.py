@@ -484,7 +484,7 @@ def slurmify(
                 "job_name": job_name,
                 "variable_name": variable_name,
                 "work_dir": "{}/{}".format(task_dir, task_name),
-                "log_dir": "{}".format(log_dir),
+                "log_dir": "{}/{}/{}".format(task_dir, task_name,log_dir),
                 "partition": "{}".format(resources[command_key]["partition"]),
                 "cpus": resources[command_key]["cpus"],
                 "gpus": resources[command_key]["gpus"],
@@ -645,12 +645,12 @@ if __name__ == "__main__":
         for job in data["task_order"]:
             parse(
                 read_func=read_func,
-                symlink_dirs=data["jobs"]["symlink_dirs"],
-                task_dir=data["jobs"]["task_dir"],
-                task_name=data["jobs"]["task_name"],
+                symlink_dirs=data["jobs"][job]["symlink_dirs"],
+                task_dir=data["jobs"][job]["task_dir"],
+                task_name=data["jobs"][job]["task_name"],
                 task_type=job,
-                stop_condition=data["jobs"]["stop_condition"],
-                essential_dirs=data["jobs"]["essential_dirs"][0],
+                stop_condition=data["jobs"][job]["stop_condition"],
+                essential_dirs=data["jobs"][job]["essential_dirs"][0],
             )
 
     ###################################################################
@@ -658,9 +658,9 @@ if __name__ == "__main__":
     ###################################################################
 
     resources = {
-        "cactus-preprocess": {"cpus": 8, "gpus": 4, "partition": "gpu96"},
-        "cactus-blast": {"cpus": 8, "gpus": 4, "partition": "gpu96"},
-        "cactus-align": {"cpus": 8, "gpus": 4, "partition": "gpu96"},
+        "cactus-preprocess": {"cpus": 48 , "gpus": None, "partition": "stan96"},
+        "cactus-blast": {"cpus": 96, "gpus": None, "partition": "stan96"},
+        "cactus-align": {"cpus": 96, "gpus": None, "partition": "stan96"},
         "hal2fasta": {"cpus": 1, "gpus": None, "partition": "staff"},
         "halAppendSubtree": {"cpus": 1, "gpus": None, "partition": "staff"},
         "regular": {"cpus": 1, "gpus": None, "partition": "staff"},
@@ -672,13 +672,13 @@ if __name__ == "__main__":
     # get rounds
     round_dirs = sorted(
         next(
-            os.walk("{}/{}".format(data[job]["task_dir"], data[job]["task_name"])),
+            os.walk("{}/{}".format(data["jobs"][job]["task_dir"], data["jobs"][job]["task_name"])),
             (None, None, []),
         )[1]
     )
 
     # get original dictionary structure
-    d = data["jobs"][job]["essential_dirs"]
+    d = data["jobs"][job]["essential_dirs"][0]
 
     # make the update
     data["jobs"][job]["essential_dirs"] = list(
@@ -702,7 +702,7 @@ if __name__ == "__main__":
                     task_type=job,
                     script_dir=essential_dir[key],
                     log_dir=essential_dir["logs"],
-                    resources=data["jobs"][job]["resources"],
+                    resources=resources,
                     initial_dependencies=dependencies,
                 )
 
@@ -717,7 +717,7 @@ if __name__ == "__main__":
     for job in data["task_order"]:
         for script_dir in data["jobs"][job]["essential_dirs"]:
             create_workflow_script(
-                ask_dir=data["jobs"][job]["task_dir"],
+                task_dir=data["jobs"][job]["task_dir"],
                 task_name=data["jobs"][job]["task_name"],
                 task_type=job,
                 script_dir=script_dir["all"],
