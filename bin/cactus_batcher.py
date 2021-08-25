@@ -189,8 +189,20 @@ def create_argparser():
 
 
 def cactus_job_command_name(line):
+    """Gathering information according to the cactus command line
+
+    Args:
+        @line: string containing a line read from the file
+
+    Returns:
+        a triple (command, extra_info, variable_name) informing:
+        - command: a string showing the given command line (cactus-preprocess, cactus-blast, cactus-align, etc.)
+        - extra_info: Info regarding the command line
+        - variable_name: a unique value for the given command line
+    """
     if isinstance(line, str) and len(line) > 0:
         command = line.split()[0]
+
         if "cactus" in command:
             jb = re.findall("\d+", line.split()[1])[0]
             if "preprocess" in command:
@@ -428,7 +440,7 @@ def slurmify(
     filenames = next(
         os.walk("{}/{}/{}".format(task_dir, task_name, script_dir)), (None, None, [])
     )[2]
-    
+
     # list of variable names that serve as dependencies for the next batch
     extra_dependencies = []
 
@@ -439,7 +451,7 @@ def slurmify(
         # sanity check
         if ext not in file_extension:
             continue
-        
+
         # create bash filename
         bash_filename = "{}/{}/{}/{}.sh".format(
             task_dir, task_name, script_dir, bash_filename
@@ -505,59 +517,33 @@ def slurmify(
 
 
 def create_workflow_script(
-    workflow_dir, task_order, tasks, workflow_name="run-cactus-workflow"
+    task_dir, task_name, task_type, script_dir, workflow_filename
 ):
 
-    # create a new bash script file there
-    workflow_scripts = "{}/{}.sh".format(workflow_dir, workflow_name)
-    create_bash_script(filename=workflow_scripts)
+    # adding preprocess
+    append(filename=workflow_filename, line="\n### - {} step\n".format(task_type))
 
-    for task_type in task_order:
+    # get path path for all-{}.sh bash script
+    path = "{}/{}/{}".format(
+        task_dir,
+        task_name,
+        script_dir,
+    )
+    filenames = next(os.walk(path), (None, None, []))[2]
 
-        # adding preprocess
-        append(filename=workflow_scripts, line="\n### - {} step\n".format(task_type))
+    # check all files
+    for filename in filenames:
 
-        # get path path for all-{}.sh bash script
-        path = "{}/{}/{}".format(
-            tasks[task_type]["task_dir"],
-            tasks[task_type]["task_name"],
-            tasks[task_type]["essential_dirs"]["all"],
-        )
-        filenames = next(os.walk(path), (None, None, []))[2]
+        # update filename path
+        script = "{}/{}".format(path, filename)
 
-        # check all files
-        for filename in filenames:
+        # filtering files that aren't executable
+        if os.path.isfile(script) and not os.access(script, os.X_OK):
+            continue
 
-            # update filename path
-            script = "{}/{}".format(path, filename)
+        line = ["source", script]
 
-            # filtering files that aren't executable
-            if os.path.isfile(script) and not os.access(script, os.X_OK):
-                continue
-
-            # dependency slurm variable
-            dependency_id = []
-
-            # prepare slurm submission
-            kwargs = {
-                "name": "all_{}".format(task_type),
-                "work_dir": None,
-                "log_dir": "{}".format(tasks[task_type]["essential_dirs"]["logs"]),
-                "partition": "{}".format(resources["regular"]["partition"]),
-                "cpus": resources["regular"]["cpus"],
-                "gpus": resources["regular"]["gpus"],
-                "commands": [script],
-                "dependencies": dependency_id,
-            }
-            sbatch = get_slurm_submission(**kwargs)
-
-            # create dependencies between slurm calls
-            dependency_id.clear()
-            dependency_id.append("task_all_{}".format(task_type))
-            sbatch[0] = "{}=$(sbatch".format(",".join(dependency_id))
-            sbatch.append(")")
-
-            append(filename=workflow_scripts, line=" ".join(sbatch))
+        append(filename=workflow_filename, line=" ".join(line))
 
 
 ###################################################################
@@ -583,36 +569,40 @@ if __name__ == "__main__":
     read_func = read_file(args.commands)
 
     ###################################################################
-    ###               CACTUS-PREAPRE  PARSING STEP                   ##
+    ###                          DATA                                ##
     ###################################################################
 
-    task_order = ["preprocessor", "alignments", "merging"]
-
     # essential data for parsing function
-    parsing_data = {
+    data = {
         "trigger_parsing": "## Preprocessor",
+        "task_order": ["preprocessor", "alignments", "merging"],
+        "workflow_script_name": "run_cactus_workflow",
         "jobs": {
             "preprocessor": {
                 "task_name": "1-preprocessors",
                 "task_dir": args.output_dir,
                 "stop_condition": "## Alignment",
                 "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
-                "essential_dirs": {
-                    "logs": "logs",
-                    "all": "scripts/all",
-                    "separated": "scripts/separated",
-                },
+                "essential_dirs": [
+                    {
+                        "logs": "logs",
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    }
+                ],
             },
             "alignments": {
                 "task_name": "2-alignments",
                 "task_dir": args.output_dir,
                 "stop_condition": "## HAL merging",
                 "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
-                "essential_dirs": {
-                    "logs": "logs",
-                    "all": "scripts/all",
-                    "separated": "scripts/separated",
-                },
+                "essential_dirs": [
+                    {
+                        "logs": "logs",
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    }
+                ],
             },
             "merging": {
                 "task_name": "3-merging",
@@ -622,14 +612,20 @@ if __name__ == "__main__":
                     args.steps_dir,
                     args.jobstore_dir,
                 ],
-                "essential_dirs": {
-                    "logs": "logs",
-                    "all": "scripts/all",
-                    "separated": "scripts/separated",
-                },
+                "essential_dirs": [
+                    {
+                        "logs": "logs",
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    }
+                ],
             },
         },
     }
+
+    ###################################################################
+    ###               CACTUS-PREAPRE  PARSING STEP                   ##
+    ###################################################################
 
     # Parsing loop
     while True:
@@ -642,21 +638,23 @@ if __name__ == "__main__":
             break
 
         # wait...
-        if not line.startswith(parsing_data["trigger_parsing"]):
+        if not line.startswith(data["trigger_parsing"]):
             continue
 
         # starting parsing procedure
-        for job in task_order:
+        for job in data["task_order"]:
             parse(
-                **{
-                    "read_func": read_func,
-                    "task_type": job,
-                    **parsing_data["jobs"][job],
-                }
+                read_func=read_func,
+                symlink_dirs=data["jobs"]["symlink_dirs"],
+                task_dir=data["jobs"]["task_dir"],
+                task_name=data["jobs"]["task_name"],
+                task_type=job,
+                stop_condition=data["jobs"]["stop_condition"],
+                essential_dirs=data["jobs"]["essential_dirs"][0],
             )
 
     ###################################################################
-    ###                  SLURM BASH SCRIPT CREATOR                   ##
+    ###            UPDATE ALIGNMENT ESSENTIAL DIRECTORIES            ##
     ###################################################################
 
     resources = {
@@ -668,69 +666,43 @@ if __name__ == "__main__":
         "regular": {"cpus": 1, "gpus": None, "partition": "staff"},
     }
 
-    slurm_data = {
-        "preprocessor": {
-            "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
-            "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
-            "essential_dirs": [parsing_data["jobs"]["preprocessor"]["essential_dirs"]],
-            "resources": {"cactus-preprocess": resources["cactus-preprocess"]},
-        },
-        "alignments": {
-            "task_name": parsing_data["jobs"]["alignments"]["task_name"],
-            "task_dir": parsing_data["jobs"]["alignments"]["task_dir"],
-            "essential_dirs": None,
-            "resources": {
-                "cactus-blast": resources["cactus-blast"],
-                "cactus-align": resources["cactus-align"],
-                "hal2fasta": resources["hal2fasta"],
-                "regular": resources["regular"],
-            },
-        },
-        "merging": {
-            "task_name": parsing_data["jobs"]["merging"]["task_name"],
-            "task_dir": parsing_data["jobs"]["merging"]["task_dir"],
-            "essential_dirs": [parsing_data["jobs"]["merging"]["essential_dirs"]],
-            "resources": {"halAppendSubtree": resources["halAppendSubtree"]},
-        },
-    }
-
     # update alignment job information including "essential_dirs" for each round dir
     job = "alignments"
 
     # get rounds
     round_dirs = sorted(
         next(
-            os.walk(
-                "{}/{}".format(
-                    slurm_data[job]["task_dir"], slurm_data[job]["task_name"]
-                )
-            ),
+            os.walk("{}/{}".format(data[job]["task_dir"], data[job]["task_name"])),
             (None, None, []),
         )[1]
     )
 
     # get original dictionary structure
-    d = parsing_data["jobs"][job]["essential_dirs"]
+    d = data["jobs"][job]["essential_dirs"]
 
     # make the update
-    slurm_data[job]["essential_dirs"] = list(
+    data["jobs"][job]["essential_dirs"] = list(
         {key: "{}/{}".format(round_id, d[key]) for key in d.keys()}
         for round_id in round_dirs
     )
 
+    ###################################################################
+    ###                  SLURM BASH SCRIPT CREATOR                   ##
+    ###################################################################
+
     # list to carry dependencies between job types, e.g., preprocess, alignment, merging
     dependencies = []
 
-    for job in task_order:
-        for essential_dir in slurm_data[job]["essential_dirs"]:
+    for job in data["task_order"]:
+        for essential_dir in data["jobs"][job]["essential_dirs"]:
             for key in ["all", "separated"]:
                 dependencies = slurmify(
-                    task_dir=slurm_data[job]["task_dir"],
-                    task_name=slurm_data[job]["task_name"],
+                    task_dir=data["jobs"][job]["task_dir"],
+                    task_name=data["jobs"][job]["task_name"],
                     task_type=job,
                     script_dir=essential_dir[key],
                     log_dir=essential_dir["logs"],
-                    resources=slurm_data[job]["resources"],
+                    resources=data["jobs"][job]["resources"],
                     initial_dependencies=dependencies,
                 )
 
@@ -738,27 +710,16 @@ if __name__ == "__main__":
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
     ###################################################################
 
-    workflow_data = {
-        "workflow_dir": args.output_dir,
-        "task_order": task_order,
-        "tasks": {
-            "preprocessor": {
-                "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
-                "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
-                "essential_dirs": parsing_data["jobs"]["preprocessor"][
-                    "essential_dirs"
-                ],
-            },
-            "alignments": {
-                "task_name": parsing_data["jobs"]["alignments"]["task_name"],
-                "task_dir": parsing_data["jobs"]["alignments"]["task_dir"],
-                "essential_dirs": parsing_data["jobs"]["alignments"]["essential_dirs"],
-            },
-            "merging": {
-                "task_name": parsing_data["jobs"]["merging"]["task_name"],
-                "task_dir": parsing_data["jobs"]["merging"]["task_dir"],
-                "essential_dirs": parsing_data["jobs"]["merging"]["essential_dirs"],
-            },
-        },
-    }
-# create_workflow_script(**workflow_data)
+    # create a new bash script file there
+    workflow_scripts = "{}/{}.sh".format(args.output_dir, data["workflow_script_name"])
+    create_bash_script(filename=workflow_scripts)
+
+    for job in data["task_order"]:
+        for script_dir in data["jobs"][job]["essential_dirs"]:
+            create_workflow_script(
+                ask_dir=data["jobs"][job]["task_dir"],
+                task_name=data["jobs"][job]["task_name"],
+                task_type=job,
+                script_dir=script_dir["all"],
+                workflow_filename=workflow_scripts,
+            )
