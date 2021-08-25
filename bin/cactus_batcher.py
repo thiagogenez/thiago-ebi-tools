@@ -191,28 +191,35 @@ def create_argparser():
 def cactus_job_command_name(line):
     if isinstance(line, str) and len(line) > 0:
         command = line.split()[0]
-        if 'cactus' in command:
-            jb = re.findall("\d+", line.split()[1] )[0]
-            if 'preprocess' in command:    
-                input_names = (re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_"))
-                variable_name =  '{}_{}_{}'.format(command.replace('-','_'), jb, input_names).upper()
+        if "cactus" in command:
+            jb = re.findall("\d+", line.split()[1])[0]
+            if "preprocess" in command:
+                input_names = (
+                    re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
+                )
+                variable_name = "{}_{}_{}".format(
+                    command.replace("-", "_"), jb, input_names
+                ).upper()
                 return command, input_names, variable_name
 
             elif "blast" in command or "align" in command:
                 anc_id = re.findall("--root (.*)$", line)[0].split()[0]
-                variable_name = '{}_{}_{}'.format(command.replace('-','_'), jb, anc_id).upper()
+                variable_name = "{}_{}_{}".format(
+                    command.replace("-", "_"), jb, anc_id
+                ).upper()
                 return command, anc_id, variable_name
 
         elif command == "hal2fasta":
             anc_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1]
-            variable_name = '{}_{}'.format(command, anc_id).upper()
-            return command, anc_id, variable_name      
+            variable_name = "{}_{}".format(command, anc_id).upper()
+            return command, anc_id, variable_name
 
-        elif command == "halAppendSubtree": 
+        elif command == "halAppendSubtree":
             parent_name = line.split()[3]
             root_name = line.split()[4]
-            variable_name = '{}_{}_{}'.format(command, parent_name, root_name).upper()
-            return command, '{}_{}'.format(parent_name, root_name),variable_name
+            variable_name = "{}_{}_{}".format(command, parent_name, root_name).upper()
+            return command, "{}_{}".format(parent_name, root_name), variable_name
+
 
 ###################################################################
 ###               CACTUS-BATCHER  PARSING STEP                   ##
@@ -274,7 +281,7 @@ def parse(
 
         if "preprocessor" == task_type:
             # define the correct filenames to write the line
-            _,input_names,_ = cactus_job_command_name(line)
+            _, input_names, _ = cactus_job_command_name(line)
 
             parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
                 task_dir, task_name, essential_dirs["all"], task_type, ext
@@ -302,9 +309,9 @@ def parse(
 
             # sanity check
             assert "round_path" in locals()
-            
+
             # get Anc_id from the current command-line
-            command,anc_id,_ = cactus_job_command_name(line)
+            command, anc_id, _ = cactus_job_command_name(line)
 
             # update filenames to write the line
             parsed_files["all"] = "{}/{}/{}.{}".format(
@@ -318,8 +325,8 @@ def parse(
         elif "merging" == task_type:
 
             # get parent and root node from the command line
-            _,parent_root_name,_ = cactus_job_command_name(line)  
-           
+            _, parent_root_name, _ = cactus_job_command_name(line)
+
             parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
                 task_dir, task_name, essential_dirs["all"], task_type, ext
             )
@@ -342,7 +349,15 @@ def parse(
 
 
 def get_slurm_submission(
-    job_name, variable_name,  work_dir, log_dir, partition, gpus, cpus, commands, dependencies
+    job_name,
+    variable_name,
+    work_dir,
+    log_dir,
+    partition,
+    gpus,
+    cpus,
+    commands,
+    dependencies,
 ):
 
     """Prepare a Slurm string call
@@ -391,7 +406,8 @@ def slurmify(
     task_dir,
     task_name,
     task_type,
-    essential_dirs,
+    script_dir,
+    log_dir,
     resources,
     initial_dependencies,
     ext="dat",
@@ -402,84 +418,79 @@ def slurmify(
         @task_dir: Location of the cactus task
         @task_name: Name of the cactus task
         @task_type: type of the given task
-        @essential_dirs: Essential directories where command lines are stored
+        @script_dir: Directory to read data and create script
+        @log_dir: Log path for Cactus call
         @resources: Slurm resources information
         @ext: Extension for the files that contains the command lines
     """
-    dirs = [essential_dirs["all"], essential_dirs["separated"]]
 
-    extra_dependencies = []
-    for root_dir in dirs:
+    # get list of filenames
+    filenames = next(
+        os.walk("{}/{}/{}".format(task_dir, task_name, script_dir)), (None, None, [])
+    )[2]
 
-        # get list of filenames
-        filenames = next(
-            os.walk("{}/{}/{}".format(task_dir, task_name, root_dir)), (None, None, [])
-        )[2]
+    for filename in filenames:
 
-        for filename in filenames:
+        bash_filename, file_extension = os.path.splitext(filename)
 
-            bash_filename, file_extension = os.path.splitext(filename)
+        # sanity check
+        if ext not in file_extension:
+            continue
+        print(filename)
+        # create bash filename
+        bash_filename = "{}/{}/{}/{}.sh".format(
+            task_dir, task_name, script_dir, bash_filename
+        )
+        create_bash_script(filename=bash_filename)
 
-            # sanity check
-            if ext not in file_extension:
-                continue
-            print(filename)
-            # create bash filename
-            bash_filename = "{}/{}/{}/{}.sh".format(
-                task_dir, task_name, root_dir, bash_filename
-            )
-            create_bash_script(filename=bash_filename)
+        # dependency slurm variable
+        intra_dependencies = list(initial_dependencies)
 
-            # dependency slurm variable
-            intra_dependencies = list(initial_dependencies)
+        for line in read_file(
+            filename="{}/{}/{}/{}".format(task_dir, task_name, script_dir, filename)
+        ):
+            # remove rubbish
+            line = line.strip()
 
-            for line in read_file(
-                filename="{}/{}/{}/{}".format(task_dir, task_name, root_dir, filename)
+            # get the cactus command and variable name create that will serve as bash variable name and slurm job name
+            command_key, job_name, variable_name = cactus_job_command_name(line)
+
+            # set Cactus log file for Toil outputs
+            if command_key != "halAppendSubtree" or command_key != "hal2fasta":
+                line = line + " --logFile {}/{}.log".format(log_dir, task_name)
+
+            # update the extra dependency between task types
+            extra_dependencies.append(variable_name)
+            if command_key == "cactus-blast" or command_key == "cactus-align":
+                extra_dependencies.pop()
+
+            # prepare slurm submission
+            kwargs = {
+                "job_name": job_name,
+                "variable_name": variable_name,
+                "work_dir": "{}/{}".format(task_dir, task_name),
+                "log_dir": "{}".format(log_dir),
+                "partition": "{}".format(resources[command_key]["partition"]),
+                "cpus": resources[command_key]["cpus"],
+                "gpus": resources[command_key]["gpus"],
+                "commands": ["{}".format(line.strip())],
+                "dependencies": intra_dependencies,
+            }
+
+            # get the slurm string call
+            sbatch = get_slurm_submission(**kwargs)
+
+            # update the intra dependency list between command_key
+            if (
+                command_key == "halAppendSubtree"
+                or command_key == "cactus-blast"
+                or command_key == "cactus-align"
             ):
-                # remove rubbish
-                line = line.strip()
+                intra_dependencies.clear()
+                intra_dependencies.append(variable_name)
 
-                # get the cactus command and variable name create that will serve as bash variable name and slurm job name
-                command_key,job_name,variable_name = cactus_job_command_name(line)
-
-                # set Cactus log file for Toil outputs
-                if command_key != "halAppendSubtree" or command_key != "hal2fasta":
-                    line = line + " --logFile {}/{}.log".format(
-                        essential_dirs["logs"], task_name
-                    )
-
-                # update the extra dependency between task types
-                extra_dependencies.append(variable_name)
-                if command_key == "cactus-blast" or command_key == "cactus-align":
-                    extra_dependencies.pop() 
-
-                # prepare slurm submission
-                kwargs = {
-                    "job_name": job_name,
-                    "variable_name": variable_name,
-                    "work_dir": "{}/{}".format(task_dir, task_name),
-                    "log_dir": "{}".format(essential_dirs["logs"]),
-                    "partition": "{}".format(resources[command_key]["partition"]),
-                    "cpus": resources[command_key]["cpus"],
-                    "gpus": resources[command_key]["gpus"],
-                    "commands": ["{}".format(line.strip())],
-                    "dependencies": intra_dependencies,
-                }
-
-                # get the slurm string call
-                sbatch = get_slurm_submission(**kwargs)
-
-                # update the intra dependency list between command_key
-                if (
-                    command_key == "halAppendSubtree"
-                    or command_key == "cactus-blast"
-                    or command_key == "cactus-align"
-                ):
-                    intra_dependencies.clear()
-                    intra_dependencies.append(variable_name)
-
-                # store it in the file bash script
-                append(filename=bash_filename, line=" ".join(sbatch))
+            # store it in the file bash script
+            append(filename=bash_filename, line=" ".join(sbatch))
 
     # dependencies for the next batch
     return extra_dependencies
@@ -658,9 +669,7 @@ if __name__ == "__main__":
         "preprocessor": {
             "task_name": parsing_data["jobs"]["preprocessor"]["task_name"],
             "task_dir": parsing_data["jobs"]["preprocessor"]["task_dir"],
-            "essential_dirs": [
-                parsing_data["jobs"]["preprocessor"]["essential_dirs"]
-            ],
+            "essential_dirs": [parsing_data["jobs"]["preprocessor"]["essential_dirs"]],
             "resources": {"cactus-preprocess": resources["cactus-preprocess"]},
         },
         "alignments": {
@@ -677,7 +686,7 @@ if __name__ == "__main__":
         "merging": {
             "task_name": parsing_data["jobs"]["merging"]["task_name"],
             "task_dir": parsing_data["jobs"]["merging"]["task_dir"],
-            "essential_dirs": [ parsing_data["jobs"]["merging"]["essential_dirs"]],
+            "essential_dirs": [parsing_data["jobs"]["merging"]["essential_dirs"]],
             "resources": {"halAppendSubtree": resources["halAppendSubtree"]},
         },
     }
@@ -711,14 +720,16 @@ if __name__ == "__main__":
 
     for job in task_order:
         for essential_dir in slurm_data[job]["essential_dirs"]:
-            dependencies = slurmify(
-                task_dir=slurm_data[job]["task_dir"],
-                task_name=slurm_data[job]["task_name"],
-                task_type=job,
-                essential_dirs=essential_dir,
-                resources=slurm_data[job]["resources"],
-                initial_dependencies=dependencies,
-            )
+            for key in ["all", "separated"]:
+                dependencies = slurmify(
+                    task_dir=slurm_data[job]["task_dir"],
+                    task_name=slurm_data[job]["task_name"],
+                    task_type=job,
+                    script_dir=essential_dir[key],
+                    log_dir=essential_dir["log"],
+                    resources=slurm_data[job]["resources"],
+                    initial_dependencies=dependencies,
+                )
 
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
@@ -747,4 +758,4 @@ if __name__ == "__main__":
             },
         },
     }
-   #create_workflow_script(**workflow_data)
+# create_workflow_script(**workflow_data)
