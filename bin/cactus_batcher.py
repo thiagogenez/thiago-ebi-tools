@@ -428,6 +428,9 @@ def slurmify(
     filenames = next(
         os.walk("{}/{}/{}".format(task_dir, task_name, script_dir)), (None, None, [])
     )[2]
+    
+    # list of variable names that serve as dependencies for the next batch
+    extra_dependencies = []
 
     for filename in filenames:
 
@@ -436,7 +439,7 @@ def slurmify(
         # sanity check
         if ext not in file_extension:
             continue
-        print(filename)
+        
         # create bash filename
         bash_filename = "{}/{}/{}/{}.sh".format(
             task_dir, task_name, script_dir, bash_filename
@@ -726,7 +729,7 @@ if __name__ == "__main__":
                     task_name=slurm_data[job]["task_name"],
                     task_type=job,
                     script_dir=essential_dir[key],
-                    log_dir=essential_dir["log"],
+                    log_dir=essential_dir["logs"],
                     resources=slurm_data[job]["resources"],
                     initial_dependencies=dependencies,
                 )
