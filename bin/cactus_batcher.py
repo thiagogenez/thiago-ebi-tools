@@ -299,7 +299,7 @@ def parse(
     if "alignments" != task_type:
         
         # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below    
-        create_symlinks(src_dirs=symlink_dir, dest="{}/{}".format(root_dir, task_name))
+        create_symlinks(src_dirs=symlink_dir, dest=root_dir)
 
         # create log directory at root_dir
         mkdir("{}/{}".format(root_dir, log_dir), force=True)
