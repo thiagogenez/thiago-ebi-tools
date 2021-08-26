@@ -513,7 +513,7 @@ def slurmify(
             command_key, job_name, variable_name = cactus_job_command_name(line)
 
             # set Cactus log file for Toil outputs
-            if command_key != "halAppendSubtree" or command_key != "hal2fasta":
+            if command_key != "halAppendSubtree" and command_key != "hal2fasta":
                 line = line + " --logFile {}/{}/{}-{}.log".format(
                     root_dir, log_dir, command_key, job_name
                 )
