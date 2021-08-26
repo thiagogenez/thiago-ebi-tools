@@ -302,11 +302,11 @@ def parse(
         create_symlinks(src_dirs=symlink_dir, dest="{}/{}".format(root_dir, task_name))
 
         # create log directory at root_dir
-        mkdir("{}/{}/{}".format(root_dir, task_name, log_dir), force=True)
+        mkdir("{}/{}".format(root_dir, log_dir), force=True)
 
         # create script directory at root_dir
         for i in script_dir.values():
-            mkdir("{}/{}/{}".format(root_dir, task_name, i), force=True)
+            mkdir("{}/{}".format(root_dir, i), force=True)
 
     while True:
         # get the next line
@@ -331,11 +331,11 @@ def parse(
             # define the correct filenames to write the line
             _, input_names, _ = cactus_job_command_name(line)
 
-            parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
-                root_dir, task_name, script_dir["all"], task_type, ext
+            parsed_files["all"] = "{}/{}/all-{}.{}".format(
+                root_dir, script_dir["all"], task_type, ext
             )
-            parsed_files["separated"] = "{}/{}/{}/{}.{}".format(
-                root_dir, task_name, script_dir["separated"], input_names, ext
+            parsed_files["separated"] = "{}/{}/{}.{}".format(
+                root_dir, script_dir["separated"], input_names, ext
             )
 
         elif "alignments" == task_type:
@@ -343,7 +343,7 @@ def parse(
             # preamble - create a new round directory
             if line.startswith("### Round"):
                 round_id = line.split()[-1]
-                round_path = "{}/{}/{}".format(root_dir, task_name, round_id)
+                round_path = "{}/{}".format(root_dir, round_id)
 
                 # create script directory at root_dir
                 for i in script_dir.values():
@@ -378,12 +378,11 @@ def parse(
             # get parent and root node from the command line
             _, parent_root_name, _ = cactus_job_command_name(line)
 
-            parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
-                root_dir, task_name, script_dir["all"], task_type, ext
+            parsed_files["all"] = "{}/{}/all-{}.{}".format(
+                root_dir, script_dir["all"], task_type, ext
             )
-            parsed_files["separated"] = "{}/{}/{}/{}.{}".format(
+            parsed_files["separated"] = "{}/{}/{}.{}".format(
                 root_dir,
-                task_name,
                 script_dir["separated"],
                 parent_root_name,
                 ext,
@@ -435,7 +434,7 @@ def get_slurm_submission(
     sbatch.append("-e {}/{}-%j.err".format(log_dir, job_name))
     sbatch.append("-p {}".format(partition))
 
-    if gpus is not None:
+    if gpus is not None and gpus != 'None':
         sbatch.append("--gres=gpu:{}".format(gpus))
 
     if cpus is not None:
@@ -481,7 +480,7 @@ def slurmify(
 
     # get list of filenames
     filenames = next(
-        os.walk("{}/{}/{}".format(root_dir, task_name, script_dir)), (None, None, [])
+        os.walk("{}/{}".format(root_dir, script_dir)), (None, None, [])
     )[2]
 
     # list of variable names that serve as dependencies for the next batch
@@ -496,8 +495,8 @@ def slurmify(
             continue
 
         # create bash filename
-        bash_filename = "{}/{}/{}/{}.sh".format(
-            root_dir, task_name, script_dir, bash_filename
+        bash_filename = "{}/{}/{}.sh".format(
+            root_dir, script_dir, bash_filename
         )
         create_bash_script(filename=bash_filename)
 
@@ -505,7 +504,7 @@ def slurmify(
         intra_dependencies = list(initial_dependencies)
 
         for line in read_file(
-            filename="{}/{}/{}/{}".format(root_dir, task_name, script_dir, filename)
+            filename="{}/{}/{}".format(root_dir,script_dir, filename)
         ):
             # remove rubbish
             line = line.strip()
@@ -515,12 +514,12 @@ def slurmify(
 
             # set Cactus log file for Toil outputs
             if command_key != "halAppendSubtree" or command_key != "hal2fasta":
-                line = line + " --logFile {}/{}/{}/{}-{}.log".format(
-                    root_dir, task_name, log_dir, command_key, job_name
+                line = line + " --logFile {}/{}/{}-{}.log".format(
+                    root_dir, log_dir, command_key, job_name
                 )
 
             # Set the working directory of the batch script to directory before it is executed
-            work_dir =  "{}/{}".format(root_dir, task_name)
+            work_dir =  "{}".format(root_dir)
 
             # update the extra dependency between task types
             extra_dependencies.append(variable_name)
@@ -532,7 +531,7 @@ def slurmify(
                 "job_name": "{}-{}".format(command_key, job_name),
                 "variable_name": variable_name,
                 "work_dir": work_dir,
-                "log_dir": "{}/{}/{}".format(root_dir, task_name, log_dir),
+                "log_dir": "{}/{}".format(root_dir, log_dir),
                 "partition": "{}".format(resources[command_key]["partition"]),
                 "cpus": resources[command_key]["cpus"],
                 "gpus": resources[command_key]["gpus"],
@@ -572,9 +571,8 @@ def create_workflow_script(
     append(filename=workflow_filename, line="\n### - {} step\n".format(task_type))
 
     # get path path for all-{}.sh bash script
-    path = "{}/{}/{}".format(
+    path = "{}/{}".format(
         root_dir,
-        task_name,
         script_dir,
     )
     filenames = next(os.walk(path), (None, None, []))[2]
@@ -697,10 +695,11 @@ if __name__ == "__main__":
 
         # starting parsing procedure
         for job in data["task_order"]:
+            root_dir = '{}/{}'.format(data["jobs"][job]['directories']["root"],data["jobs"][job]["task_name"])
             parse(
                 read_func=read_func,
                 symlink_dir=data["jobs"][job]['directories']["symlinks"],
-                root_dir=data["jobs"][job]['directories']["root"],
+                root_dir=root_dir,
                 script_dir=data["jobs"][job]['directories']["scripts"],
                 log_dir=data["jobs"][job]['directories']["logs"],
                 task_name=data["jobs"][job]["task_name"],
@@ -745,20 +744,21 @@ if __name__ == "__main__":
     dependencies = []
 
     for job in data["task_order"]:
-        for round_id in data['jobs'][job]['directories']['rounds']:
-            root_dir=data["jobs"][job]["root_dir"] if round_id is None else '{}/{}'.format(data["jobs"][job]["root_dir"], root_dir)
-            for script_dir in data["jobs"][job]["script_dir"].values():
-                dependencies = slurmify(
+        directories = data['jobs'][job]['directories']
+        for round_id in directories['rounds']:
+            root_dir = '{}/{}'.format(directories["root"],data["jobs"][job]["task_name"])  if round_id is None else '{}/{}/{}'.format(directories["root"], data["jobs"][job]["task_name"], round_id)
+            
+            for script_dir in directories["scripts"].values():
+                deps = slurmify(
                     root_dir=root_dir,
                     task_name=data["jobs"][job]["task_name"],
                     task_type=job,
                     script_dir=script_dir,
-                    log_dir=script_dir["logs"],
+                    log_dir=directories['logs'],
                     resources=resources,
                     initial_dependencies=dependencies,
                 )
-                print(dependencies)
-
+            dependencies = deps
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
     ###################################################################
@@ -768,13 +768,13 @@ if __name__ == "__main__":
     create_bash_script(filename=workflow_scripts)
 
     for job in data["task_order"]:
-        for round_id in data['jobs'][job]['directories']['rounds']:
-            root_dir=data["jobs"][job]["root_dir"] if round_id is None else '{}/{}'.format(data["jobs"][job]["root_dir"], root_dir)
-            for script_dir in data["jobs"][job]["script_dir"]:
-                create_workflow_script(
-                    root_dir=root_dir,
-                    task_name=data["jobs"][job]["task_name"],
-                    task_type=job,
-                    script_dir=script_dir["all"],
-                    workflow_filename=workflow_scripts,
-                )
+        directories = data['jobs'][job]['directories']
+        for round_id in directories['rounds']:
+            root_dir = '{}/{}'.format(directories["root"],data["jobs"][job]["task_name"])  if round_id is None else '{}/{}/{}'.format(directories["root"], data["jobs"][job]["task_name"], round_id)
+            create_workflow_script(
+                root_dir=root_dir,
+                task_name=data["jobs"][job]["task_name"],
+                task_type=job,
+                script_dir=directories['scripts']["all"],
+                workflow_filename=workflow_scripts,
+            )
