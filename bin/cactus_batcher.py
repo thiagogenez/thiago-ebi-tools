@@ -8,6 +8,7 @@ import tempfile
 import pathlib
 import re
 from pathlib import Path
+from os import environ
 
 try:
     import yaml
@@ -17,6 +18,20 @@ except ModuleNotFoundError as err:
     print(err)
     print('Please, run "pip install PyYAML" to install PyYAML module')
     exit(1)
+
+# sanity check for environment variables CACTUS_IMAGE and CACTUS_GPU_IMAGE
+try:
+    for i in ["CACTUS_IMAGE", "CACTUS_GPU_IMAGE"]:
+        if os.environ.get(i) is None:
+            raise Exception(
+                "Please set the environment variable {} to point to singularity image.".format(
+                    i
+                )
+            )
+except Exception as err:
+    print(err)
+    sys.exit(1)
+
 
 ###################################################################
 ###                    UTILITY   FUNCTIONS                       ##
@@ -334,9 +349,6 @@ def parse(
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
                 root_dir, script_dir["all"], task_type, ext
             )
-            #parsed_files["separated"] = "{}/{}/{}.{}".format(
-            #    root_dir, script_dir["separated"], input_names, ext
-            #)
 
         elif "alignments" == task_type:
 
@@ -368,9 +380,6 @@ def parse(
             parsed_files["all"] = "{}/{}/{}.{}".format(
                 round_path, script_dir["all"], anc_id, ext
             )
-            #parsed_files["separated"] = "{}/{}/{}-{}.{}".format(
-            #    round_path, script_dir["separated"], anc_id, command, ext
-            #)
 
         # update filenames to write the line
         elif "merging" == task_type:
@@ -381,12 +390,6 @@ def parse(
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
                 root_dir, script_dir["all"], task_type, ext
             )
-            #parsed_files["separated"] = "{}/{}/{}.{}".format(
-            #    root_dir,
-            #    script_dir["separated"],
-            #    parent_root_name,
-            #    ext,
-            #)
 
         # write the line in the correct files
         for i in parsed_files.keys():
@@ -408,6 +411,7 @@ def get_slurm_submission(
     cpus,
     commands,
     dependencies,
+    singularity=True,
 ):
 
     """Prepare a Slurm string call
@@ -421,6 +425,7 @@ def get_slurm_submission(
         @cpus: Amount of CPUs to run the job
         @commands: List of commands that the Slurm job must run
         @dependencies: list of Job IDs that this job depends on
+        @singularity: True if @commands should run via singularity
     """
 
     # sbatch command line
@@ -447,11 +452,27 @@ def get_slurm_submission(
             )
         )
 
-    sbatch.append(
-        '--wrap "singularity run /apps/cactus/images/cactus.sif {}")'.format(
-            ";".join(commands)
-        )
-    )
+    # sanity check
+    if isinstance(commands, str):
+        commands = list(commands)
+
+    # define singularity
+    if singularity:
+
+        # get image PATH from environment variable
+        image = os.environ.get("CACTUS_IMAGE")
+
+        # for GPU usage, grab another image
+        if gpus is not None and gpus != "None":
+            image = "--nv {}".format(os.environ.get("CACTUS_GPU_IMAGE"))
+
+        # wrap the commands to use singularity
+        commands = [
+            "singularity run {}".format(image) + command for command in commands
+        ]
+
+    # wrap the commands for SLURM
+    sbatch.append('--wrap "{}")'.format(";".join(commands)))
 
     return sbatch
 
@@ -479,7 +500,9 @@ def slurmify(
     """
 
     # get list of filenames
-    filenames = next(os.walk("{}/{}".format(root_dir, script_dirs['all'])), (None, None, []))[2]
+    filenames = next(
+        os.walk("{}/{}".format(root_dir, script_dirs["all"])), (None, None, [])
+    )[2]
 
     # list of variable names that serve as dependencies for the next batch
     extra_dependencies = []
@@ -491,15 +514,17 @@ def slurmify(
         if ext not in file_extension:
             continue
 
-        # create aggregated bash script      
-        aggregated_bashscript_filename = "{}/{}/{}.sh".format(root_dir, script_dirs['all'], aggregated_bashscript_filename)
+        # create aggregated bash script
+        aggregated_bashscript_filename = "{}/{}/{}.sh".format(
+            root_dir, script_dirs["all"], aggregated_bashscript_filename
+        )
         create_bash_script(filename=aggregated_bashscript_filename)
 
         # dependency SLURM variable
         intra_dependencies = list(initial_dependencies)
 
         for line in read_file(
-            filename="{}/{}/{}".format(root_dir, script_dirs['all'], filename)
+            filename="{}/{}/{}".format(root_dir, script_dirs["all"], filename)
         ):
             # remove rubbish
             line = line.strip()
@@ -547,14 +572,19 @@ def slurmify(
                 intra_dependencies.append(variable_name)
 
             # create individual bash script
-            individual_bashscript_filename = "{}/{}/{}-{}.sh".format(root_dir, script_dirs['separated'], command_key, job_name)
+            individual_bashscript_filename = "{}/{}/{}-{}.sh".format(
+                root_dir, script_dirs["separated"], command_key, job_name
+            )
             create_bash_script(filename=individual_bashscript_filename)
 
             # store it in the individual bash script
             append(filename=individual_bashscript_filename, line=" ".join(sbatch))
 
             # store it in the aggregated bash script
-            append(filename=aggregated_bashscript_filename, line="source {}".format(individual_bashscript_filename))
+            append(
+                filename=aggregated_bashscript_filename,
+                line="source {}".format(individual_bashscript_filename),
+            )
 
     # dependencies for the next batch
     return extra_dependencies
@@ -768,7 +798,7 @@ if __name__ == "__main__":
                 resources=resources,
                 initial_dependencies=dependencies,
             )
-            
+
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
     ###################################################################
