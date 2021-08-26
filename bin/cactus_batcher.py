@@ -551,7 +551,7 @@ def slurmify(
             create_bash_script(filename=individual_bashscript_filename)
 
             # store it in the individual bash script
-            append(filename=bash_filename, line=" ".join(sbatch))
+            append(filename=individual_bashscript_filename, line=" ".join(sbatch))
 
             # store it in the aggregated bash script
             append(filename=aggregated_bashscript_filename, line="source {}".format(individual_bashscript_filename))
