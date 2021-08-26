@@ -334,9 +334,9 @@ def parse(
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
                 root_dir, script_dir["all"], task_type, ext
             )
-            parsed_files["separated"] = "{}/{}/{}.{}".format(
-                root_dir, script_dir["separated"], input_names, ext
-            )
+            #parsed_files["separated"] = "{}/{}/{}.{}".format(
+            #    root_dir, script_dir["separated"], input_names, ext
+            #)
 
         elif "alignments" == task_type:
 
@@ -368,9 +368,9 @@ def parse(
             parsed_files["all"] = "{}/{}/{}.{}".format(
                 round_path, script_dir["all"], anc_id, ext
             )
-            parsed_files["separated"] = "{}/{}/{}-{}.{}".format(
-                round_path, script_dir["separated"], anc_id, command, ext
-            )
+            #parsed_files["separated"] = "{}/{}/{}-{}.{}".format(
+            #    round_path, script_dir["separated"], anc_id, command, ext
+            #)
 
         # update filenames to write the line
         elif "merging" == task_type:
@@ -381,12 +381,12 @@ def parse(
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
                 root_dir, script_dir["all"], task_type, ext
             )
-            parsed_files["separated"] = "{}/{}/{}.{}".format(
-                root_dir,
-                script_dir["separated"],
-                parent_root_name,
-                ext,
-            )
+            #parsed_files["separated"] = "{}/{}/{}.{}".format(
+            #    root_dir,
+            #    script_dir["separated"],
+            #    parent_root_name,
+            #    ext,
+            #)
 
         # write the line in the correct files
         for i in parsed_files.keys():
@@ -424,7 +424,7 @@ def get_slurm_submission(
     """
 
     # sbatch command line
-    sbatch = ["TASK_{}=$(sbatch".format(variable_name), "--parsable"]
+    sbatch = ["TASK_{}=$(sbatch".format(variable_name), "--parsable", "--requeue"]
     sbatch.append("-J {}".format(job_name))
 
     if work_dir is not None:
@@ -460,7 +460,7 @@ def slurmify(
     root_dir,
     task_name,
     task_type,
-    script_dir,
+    script_dirs,
     log_dir,
     resources,
     initial_dependencies,
@@ -472,40 +472,39 @@ def slurmify(
         @root_dir: Location of the cactus task
         @task_name: Name of the cactus task
         @task_type: type of the given task
-        @script_dir: Directory to read data and create script
+        @script_dirs: Directory to read data and create scripts
         @log_dir: Log path for Cactus call
         @resources: Slurm resources information
         @ext: Extension for the files that contains the command lines
     """
 
     # get list of filenames
-    filenames = next(os.walk("{}/{}".format(root_dir, script_dir)), (None, None, []))[2]
+    filenames = next(os.walk("{}/{}".format(root_dir, script_dirs['all'])), (None, None, []))[2]
 
     # list of variable names that serve as dependencies for the next batch
     extra_dependencies = []
 
     for filename in filenames:
 
-        bash_filename, file_extension = os.path.splitext(filename)
-
         # sanity check
+        aggregated_bashscript_filename, file_extension = os.path.splitext(filename)
         if ext not in file_extension:
             continue
 
-        # create bash filename
-        bash_filename = "{}/{}/{}.sh".format(root_dir, script_dir, bash_filename)
-        create_bash_script(filename=bash_filename)
+        # create aggregated bash script      
+        aggregated_bashscript_filename = "{}/{}/{}.sh".format(root_dir, script_dirs['all'], aggregated_bashscript_filename)
+        create_bash_script(filename=aggregated_bashscript_filename)
 
-        # dependency slurm variable
+        # dependency SLURM variable
         intra_dependencies = list(initial_dependencies)
 
         for line in read_file(
-            filename="{}/{}/{}".format(root_dir, script_dir, filename)
+            filename="{}/{}/{}".format(root_dir, script_dirs['all'], filename)
         ):
             # remove rubbish
             line = line.strip()
 
-            # get the cactus command and variable name create that will serve as bash variable name and slurm job name
+            # get the cactus command and variable name create that will serve as bash variable name and SLURM job name
             command_key, job_name, variable_name = cactus_job_command_name(line)
 
             # set Cactus log file for Toil outputs
@@ -522,7 +521,7 @@ def slurmify(
             if command_key == "cactus-blast" or command_key == "cactus-align":
                 extra_dependencies.pop()
 
-            # prepare slurm submission
+            # prepare SLURM submission
             kwargs = {
                 "job_name": "{}-{}".format(command_key, job_name),
                 "variable_name": variable_name,
@@ -535,7 +534,7 @@ def slurmify(
                 "dependencies": intra_dependencies,
             }
 
-            # get the slurm string call
+            # get the SLURM string call
             sbatch = get_slurm_submission(**kwargs)
 
             # update the intra dependency list between command_key
@@ -547,8 +546,15 @@ def slurmify(
                 intra_dependencies.clear()
                 intra_dependencies.append(variable_name)
 
-            # store it in the file bash script
+            # create individual bash script
+            individual_bashscript_filename = "{}/{}/{}-{}.sh".format(root_dir, script_dirs['separated'], command_key, job_name)
+            create_bash_script(filename=individual_bashscript_filename)
+
+            # store it in the individual bash script
             append(filename=bash_filename, line=" ".join(sbatch))
+
+            # store it in the aggregated bash script
+            append(filename=aggregated_bashscript_filename, line="source {}".format(individual_bashscript_filename))
 
     # dependencies for the next batch
     return extra_dependencies
@@ -752,18 +758,17 @@ if __name__ == "__main__":
                     directories["root"], data["jobs"][job]["task_name"], round_id
                 )
             )
-
-            for script_dir in directories["scripts"].values():
-                deps = slurmify(
-                    root_dir=root_dir,
-                    task_name=data["jobs"][job]["task_name"],
-                    task_type=job,
-                    script_dir=script_dir,
-                    log_dir=directories["logs"],
-                    resources=resources,
-                    initial_dependencies=dependencies,
-                )
-            dependencies = deps
+            # create SLURM batches jobs
+            dependencies = slurmify(
+                root_dir=root_dir,
+                task_name=data["jobs"][job]["task_name"],
+                task_type=job,
+                script_dirs=directories["scripts"],
+                log_dir=directories["logs"],
+                resources=resources,
+                initial_dependencies=dependencies,
+            )
+            
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
     ###################################################################
