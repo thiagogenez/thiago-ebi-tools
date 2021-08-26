@@ -258,10 +258,11 @@ def parse_yaml(filename):
         YAML content or None otherwise
     """
 
-    with open(filename, mode="r") as f: 
+    with open(filename, mode="r") as f:
         return yaml.load(f, Loader=SafeLoader)
 
     return None
+
 
 ###################################################################
 ###               CACTUS-BATCHER  PARSING STEP                   ##
@@ -270,37 +271,42 @@ def parse_yaml(filename):
 
 def parse(
     read_func,
-    symlink_dirs,
-    task_dir,
+    symlink_dir,
+    root_dir,
+    script_dir,
+    log_dir,
     task_name,
     task_type,
     stop_condition,
-    essential_dirs,
     ext="dat",
 ):
     """Main function to parse the output file of Cactus-prepare
 
     Args:
         @read_func: pointer to the function that yields input lines
-        @symlink_dirs: list of directories (as source) for symlink creation
-        @task_dir: the directory to save parser's output
+        @symlink_dir: list of directories (as source) for symlink creation
+        @root_dir: the directory to save parser's output
         @task_name: parser rule name (preprocessor, alignment, merging)
         @task_type: type of the given task
         @stop_condition: the condition to stop this parser
-        @essential_dirs: list of extra directories to be created inside of @task_dir
+        @script_dir: list of extra directories to be created inside of @root_dir
     """
 
     # dict to point to parsed files
     parsed_files = {}
 
-    # Preamble - create links needed to execute Cactus at @task_dir
-    # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
+    # Preamble - create links and directories needed to execute Cactus at @root_dir
     if "alignments" != task_type:
-        create_symlinks(src_dirs=symlink_dirs, dest="{}/{}".format(task_dir, task_name))
+        
+        # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below    
+        create_symlinks(src_dirs=symlink_dir, dest="{}/{}".format(root_dir, task_name))
 
-        # create extra dirs at task_dir
-        for i in essential_dirs.values():
-            mkdir("{}/{}/{}".format(task_dir, task_name, i), force=True)
+        # create log directory at root_dir
+        mkdir("{}/{}/{}".format(root_dir, task_name, log_dir), force=True)
+
+        # create script directory at root_dir
+        for i in script_dir.values():
+            mkdir("{}/{}/{}".format(root_dir, task_name, i), force=True)
 
     while True:
         # get the next line
@@ -326,10 +332,10 @@ def parse(
             _, input_names, _ = cactus_job_command_name(line)
 
             parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
-                task_dir, task_name, essential_dirs["all"], task_type, ext
+                root_dir, task_name, script_dir["all"], task_type, ext
             )
             parsed_files["separated"] = "{}/{}/{}/{}.{}".format(
-                task_dir, task_name, essential_dirs["separated"], input_names, ext
+                root_dir, task_name, script_dir["separated"], input_names, ext
             )
 
         elif "alignments" == task_type:
@@ -337,14 +343,17 @@ def parse(
             # preamble - create a new round directory
             if line.startswith("### Round"):
                 round_id = line.split()[-1]
-                round_path = "{}/{}/{}".format(task_dir, task_name, round_id)
+                round_path = "{}/{}/{}".format(root_dir, task_name, round_id)
 
-                # create extra dirs at task_dir
-                for i in essential_dirs.values():
+                # create script directory at root_dir
+                for i in script_dir.values():
                     mkdir("{}/{}".format(round_path, i), force=True)
 
+                # create log directory at root_dir
+                mkdir("{}/{}".format(round_path, log_dir), force=True)
+
                 # create links needed for execution
-                create_symlinks(src_dirs=symlink_dirs, dest=round_path)
+                create_symlinks(src_dirs=symlink_dir, dest=round_path)
 
                 # go to the next line
                 continue
@@ -357,10 +366,10 @@ def parse(
 
             # update filenames to write the line
             parsed_files["all"] = "{}/{}/{}.{}".format(
-                round_path, essential_dirs["all"], anc_id, ext
+                round_path, script_dir["all"], anc_id, ext
             )
             parsed_files["separated"] = "{}/{}/{}-{}.{}".format(
-                round_path, essential_dirs["separated"], anc_id, command, ext
+                round_path, script_dir["separated"], anc_id, command, ext
             )
 
         # update filenames to write the line
@@ -370,12 +379,12 @@ def parse(
             _, parent_root_name, _ = cactus_job_command_name(line)
 
             parsed_files["all"] = "{}/{}/{}/all-{}.{}".format(
-                task_dir, task_name, essential_dirs["all"], task_type, ext
+                root_dir, task_name, script_dir["all"], task_type, ext
             )
             parsed_files["separated"] = "{}/{}/{}/{}.{}".format(
-                task_dir,
+                root_dir,
                 task_name,
-                essential_dirs["separated"],
+                script_dir["separated"],
                 parent_root_name,
                 ext,
             )
@@ -439,13 +448,17 @@ def get_slurm_submission(
             )
         )
 
-    sbatch.append('--wrap "singularity run /apps/cactus/images/cactus.sif {}")'.format(";".join(commands)))
+    sbatch.append(
+        '--wrap "singularity run /apps/cactus/images/cactus.sif {}")'.format(
+            ";".join(commands)
+        )
+    )
 
     return sbatch
 
 
 def slurmify(
-    task_dir,
+    root_dir,
     task_name,
     task_type,
     script_dir,
@@ -457,7 +470,7 @@ def slurmify(
     """Wraps each command line into a Slurm job
 
     Args:
-        @task_dir: Location of the cactus task
+        @root_dir: Location of the cactus task
         @task_name: Name of the cactus task
         @task_type: type of the given task
         @script_dir: Directory to read data and create script
@@ -468,7 +481,7 @@ def slurmify(
 
     # get list of filenames
     filenames = next(
-        os.walk("{}/{}/{}".format(task_dir, task_name, script_dir)), (None, None, [])
+        os.walk("{}/{}/{}".format(root_dir, task_name, script_dir)), (None, None, [])
     )[2]
 
     # list of variable names that serve as dependencies for the next batch
@@ -484,7 +497,7 @@ def slurmify(
 
         # create bash filename
         bash_filename = "{}/{}/{}/{}.sh".format(
-            task_dir, task_name, script_dir, bash_filename
+            root_dir, task_name, script_dir, bash_filename
         )
         create_bash_script(filename=bash_filename)
 
@@ -492,7 +505,7 @@ def slurmify(
         intra_dependencies = list(initial_dependencies)
 
         for line in read_file(
-            filename="{}/{}/{}/{}".format(task_dir, task_name, script_dir, filename)
+            filename="{}/{}/{}/{}".format(root_dir, task_name, script_dir, filename)
         ):
             # remove rubbish
             line = line.strip()
@@ -502,7 +515,12 @@ def slurmify(
 
             # set Cactus log file for Toil outputs
             if command_key != "halAppendSubtree" or command_key != "hal2fasta":
-                line = line + " --logFile {}/{}/{}/{}-{}.log".format(task_dir, task_name, log_dir, command_key, job_name)
+                line = line + " --logFile {}/{}/{}/{}-{}.log".format(
+                    root_dir, task_name, log_dir, command_key, job_name
+                )
+
+            # Set the working directory of the batch script to directory before it is executed
+            work_dir =  "{}/{}".format(root_dir, task_name)
 
             # update the extra dependency between task types
             extra_dependencies.append(variable_name)
@@ -511,10 +529,10 @@ def slurmify(
 
             # prepare slurm submission
             kwargs = {
-                "job_name": '{}-{}'.format(command_key,job_name),
+                "job_name": "{}-{}".format(command_key, job_name),
                 "variable_name": variable_name,
-                "work_dir": "{}/{}".format(task_dir, task_name),
-                "log_dir": "{}/{}/{}".format(task_dir, task_name,log_dir),
+                "work_dir": work_dir,
+                "log_dir": "{}/{}/{}".format(root_dir, task_name, log_dir),
                 "partition": "{}".format(resources[command_key]["partition"]),
                 "cpus": resources[command_key]["cpus"],
                 "gpus": resources[command_key]["gpus"],
@@ -547,7 +565,7 @@ def slurmify(
 
 
 def create_workflow_script(
-    task_dir, task_name, task_type, script_dir, workflow_filename
+    root_dir, task_name, task_type, script_dir, workflow_filename
 ):
 
     # adding preprocess
@@ -555,7 +573,7 @@ def create_workflow_script(
 
     # get path path for all-{}.sh bash script
     path = "{}/{}/{}".format(
-        task_dir,
+        root_dir,
         task_name,
         script_dir,
     )
@@ -613,45 +631,48 @@ if __name__ == "__main__":
         "jobs": {
             "preprocessor": {
                 "task_name": "1-preprocessors",
-                "task_dir": args.output_dir,
                 "stop_condition": "## Alignment",
-                "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
-                "essential_dirs": [
-                    {
-                        "logs": "logs",
-                        "all": "scripts/all",
-                        "separated": "scripts/separated",
-                    }
-                ],
+                "directories": {
+                    "root": args.output_dir,
+                    "symlinks": [ args.steps_dir, args.jobstore_dir, args.input_dir],
+                    "logs": "logs",
+                    "scripts": 
+                        {
+                            "all": "scripts/all",
+                            "separated": "scripts/separated",
+                        },
+                    "rounds": [None]
+                }
+
             },
             "alignments": {
                 "task_name": "2-alignments",
-                "task_dir": args.output_dir,
                 "stop_condition": "## HAL merging",
-                "symlink_dirs": [args.steps_dir, args.jobstore_dir, args.input_dir],
-                "essential_dirs": [
-                    {
-                        "logs": "logs",
-                        "all": "scripts/all",
-                        "separated": "scripts/separated",
-                    }
-                ],
+                "directories": {
+                    "root": args.output_dir,
+                    "symlinks": [args.steps_dir, args.jobstore_dir, args.input_dir],
+                    "logs": "logs",
+                    "scripts": {
+                            "all": "scripts/all",
+                            "separated": "scripts/separated",
+                        },
+                    "rounds": [None]       
+                }
             },
             "merging": {
                 "task_name": "3-merging",
-                "task_dir": args.output_dir,
                 "stop_condition": None,
-                "symlink_dirs": [
-                    args.steps_dir,
-                    args.jobstore_dir,
-                ],
-                "essential_dirs": [
-                    {
-                        "logs": "logs",
-                        "all": "scripts/all",
-                        "separated": "scripts/separated",
-                    }
-                ],
+                "directories": {
+                    "root": args.output_dir,
+                    "symlinks": [ args.steps_dir, args.jobstore_dir,],
+                    "logs": "logs",
+                    "scripts": 
+                        {
+                            "all": "scripts/all",
+                            "separated": "scripts/separated",
+                        },
+                    "rounds": [None]              
+                }
             },
         },
     }
@@ -678,37 +699,43 @@ if __name__ == "__main__":
         for job in data["task_order"]:
             parse(
                 read_func=read_func,
-                symlink_dirs=data["jobs"][job]["symlink_dirs"],
-                task_dir=data["jobs"][job]["task_dir"],
+                symlink_dir=data["jobs"][job]['directories']["symlinks"],
+                root_dir=data["jobs"][job]['directories']["root"],
+                script_dir=data["jobs"][job]['directories']["scripts"],
+                log_dir=data["jobs"][job]['directories']["logs"],
                 task_name=data["jobs"][job]["task_name"],
                 task_type=job,
                 stop_condition=data["jobs"][job]["stop_condition"],
-                essential_dirs=data["jobs"][job]["essential_dirs"][0],
             )
 
     ###################################################################
     ###            UPDATE ALIGNMENT ESSENTIAL DIRECTORIES            ##
     ###################################################################
 
-    # update alignment job information including "essential_dirs" for each round dir
+    # update alignment job information including "script_dir" for each round dir
     job = "alignments"
 
     # get rounds
     round_dirs = sorted(
         next(
-            os.walk("{}/{}".format(data["jobs"][job]["task_dir"], data["jobs"][job]["task_name"])),
+            os.walk(
+                "{}/{}".format(
+                    data["jobs"][job]['directories']["root"], data["jobs"][job]["task_name"]
+                )
+            ),
             (None, None, []),
         )[1]
     )
+    data['jobs'][job]['directories']['rounds'] = round_dirs
 
     # get original dictionary structure
-    d = data["jobs"][job]["essential_dirs"][0]
+    #d = data["jobs"][job]["script_dir"][0]
 
     # make the update
-    data["jobs"][job]["essential_dirs"] = list(
-        {key: "{}/{}".format(round_id, d[key]) for key in d.keys()}
-        for round_id in round_dirs
-    )
+    #data["jobs"][job]["script_dir"] = list(
+    #    {key: "{}/{}".format(round_id, d[key]) for key in d.keys()}
+    #    for round_id in round_dirs
+    #)
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -718,17 +745,19 @@ if __name__ == "__main__":
     dependencies = []
 
     for job in data["task_order"]:
-        for essential_dir in data["jobs"][job]["essential_dirs"]:
-            for key in ["all", "separated"]:
+        for round_id in data['jobs'][job]['directories']['rounds']:
+            root_dir=data["jobs"][job]["root_dir"] if round_id is None else '{}/{}'.format(data["jobs"][job]["root_dir"], root_dir)
+            for script_dir in data["jobs"][job]["script_dir"].values():
                 dependencies = slurmify(
-                    task_dir=data["jobs"][job]["task_dir"],
+                    root_dir=root_dir,
                     task_name=data["jobs"][job]["task_name"],
                     task_type=job,
-                    script_dir=essential_dir[key],
-                    log_dir=essential_dir["logs"],
+                    script_dir=script_dir,
+                    log_dir=script_dir["logs"],
                     resources=resources,
                     initial_dependencies=dependencies,
                 )
+                print(dependencies)
 
     ###################################################################
     ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
@@ -739,11 +768,13 @@ if __name__ == "__main__":
     create_bash_script(filename=workflow_scripts)
 
     for job in data["task_order"]:
-        for script_dir in data["jobs"][job]["essential_dirs"]:
-            create_workflow_script(
-                task_dir=data["jobs"][job]["task_dir"],
-                task_name=data["jobs"][job]["task_name"],
-                task_type=job,
-                script_dir=script_dir["all"],
-                workflow_filename=workflow_scripts,
-            )
+        for round_id in data['jobs'][job]['directories']['rounds']:
+            root_dir=data["jobs"][job]["root_dir"] if round_id is None else '{}/{}'.format(data["jobs"][job]["root_dir"], root_dir)
+            for script_dir in data["jobs"][job]["script_dir"]:
+                create_workflow_script(
+                    root_dir=root_dir,
+                    task_name=data["jobs"][job]["task_name"],
+                    task_type=job,
+                    script_dir=script_dir["all"],
+                    workflow_filename=workflow_scripts,
+                )
