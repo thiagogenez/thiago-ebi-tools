@@ -297,8 +297,8 @@ def parse(
 
     # Preamble - create links and directories needed to execute Cactus at @root_dir
     if "alignments" != task_type:
-        
-        # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below    
+
+        # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
         create_symlinks(src_dirs=symlink_dir, dest=root_dir)
 
         # create log directory at root_dir
@@ -434,7 +434,7 @@ def get_slurm_submission(
     sbatch.append("-e {}/{}-%j.err".format(log_dir, job_name))
     sbatch.append("-p {}".format(partition))
 
-    if gpus is not None and gpus != 'None':
+    if gpus is not None and gpus != "None":
         sbatch.append("--gres=gpu:{}".format(gpus))
 
     if cpus is not None:
@@ -479,9 +479,7 @@ def slurmify(
     """
 
     # get list of filenames
-    filenames = next(
-        os.walk("{}/{}".format(root_dir, script_dir)), (None, None, [])
-    )[2]
+    filenames = next(os.walk("{}/{}".format(root_dir, script_dir)), (None, None, []))[2]
 
     # list of variable names that serve as dependencies for the next batch
     extra_dependencies = []
@@ -495,16 +493,14 @@ def slurmify(
             continue
 
         # create bash filename
-        bash_filename = "{}/{}/{}.sh".format(
-            root_dir, script_dir, bash_filename
-        )
+        bash_filename = "{}/{}/{}.sh".format(root_dir, script_dir, bash_filename)
         create_bash_script(filename=bash_filename)
 
         # dependency slurm variable
         intra_dependencies = list(initial_dependencies)
 
         for line in read_file(
-            filename="{}/{}/{}".format(root_dir,script_dir, filename)
+            filename="{}/{}/{}".format(root_dir, script_dir, filename)
         ):
             # remove rubbish
             line = line.strip()
@@ -519,7 +515,7 @@ def slurmify(
                 )
 
             # Set the working directory of the batch script to directory before it is executed
-            work_dir =  "{}".format(root_dir)
+            work_dir = "{}".format(root_dir)
 
             # update the extra dependency between task types
             extra_dependencies.append(variable_name)
@@ -632,16 +628,14 @@ if __name__ == "__main__":
                 "stop_condition": "## Alignment",
                 "directories": {
                     "root": args.output_dir,
-                    "symlinks": [ args.steps_dir, args.jobstore_dir, args.input_dir],
+                    "symlinks": [args.steps_dir, args.jobstore_dir, args.input_dir],
                     "logs": "logs",
-                    "scripts": 
-                        {
-                            "all": "scripts/all",
-                            "separated": "scripts/separated",
-                        },
-                    "rounds": [None]
-                }
-
+                    "scripts": {
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    },
+                    "rounds": [None],
+                },
             },
             "alignments": {
                 "task_name": "2-alignments",
@@ -651,26 +645,28 @@ if __name__ == "__main__":
                     "symlinks": [args.steps_dir, args.jobstore_dir, args.input_dir],
                     "logs": "logs",
                     "scripts": {
-                            "all": "scripts/all",
-                            "separated": "scripts/separated",
-                        },
-                    "rounds": [None]       
-                }
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    },
+                    "rounds": [None],
+                },
             },
             "merging": {
                 "task_name": "3-merging",
                 "stop_condition": None,
                 "directories": {
                     "root": args.output_dir,
-                    "symlinks": [ args.steps_dir, args.jobstore_dir,],
+                    "symlinks": [
+                        args.steps_dir,
+                        args.jobstore_dir,
+                    ],
                     "logs": "logs",
-                    "scripts": 
-                        {
-                            "all": "scripts/all",
-                            "separated": "scripts/separated",
-                        },
-                    "rounds": [None]              
-                }
+                    "scripts": {
+                        "all": "scripts/all",
+                        "separated": "scripts/separated",
+                    },
+                    "rounds": [None],
+                },
             },
         },
     }
@@ -695,13 +691,15 @@ if __name__ == "__main__":
 
         # starting parsing procedure
         for job in data["task_order"]:
-            root_dir = '{}/{}'.format(data["jobs"][job]['directories']["root"],data["jobs"][job]["task_name"])
+            root_dir = "{}/{}".format(
+                data["jobs"][job]["directories"]["root"], data["jobs"][job]["task_name"]
+            )
             parse(
                 read_func=read_func,
-                symlink_dir=data["jobs"][job]['directories']["symlinks"],
+                symlink_dir=data["jobs"][job]["directories"]["symlinks"],
                 root_dir=root_dir,
-                script_dir=data["jobs"][job]['directories']["scripts"],
-                log_dir=data["jobs"][job]['directories']["logs"],
+                script_dir=data["jobs"][job]["directories"]["scripts"],
+                log_dir=data["jobs"][job]["directories"]["logs"],
                 task_name=data["jobs"][job]["task_name"],
                 task_type=job,
                 stop_condition=data["jobs"][job]["stop_condition"],
@@ -719,22 +717,23 @@ if __name__ == "__main__":
         next(
             os.walk(
                 "{}/{}".format(
-                    data["jobs"][job]['directories']["root"], data["jobs"][job]["task_name"]
+                    data["jobs"][job]["directories"]["root"],
+                    data["jobs"][job]["task_name"],
                 )
             ),
             (None, None, []),
         )[1]
     )
-    data['jobs'][job]['directories']['rounds'] = round_dirs
+    data["jobs"][job]["directories"]["rounds"] = round_dirs
 
     # get original dictionary structure
-    #d = data["jobs"][job]["script_dir"][0]
+    # d = data["jobs"][job]["script_dir"][0]
 
     # make the update
-    #data["jobs"][job]["script_dir"] = list(
+    # data["jobs"][job]["script_dir"] = list(
     #    {key: "{}/{}".format(round_id, d[key]) for key in d.keys()}
     #    for round_id in round_dirs
-    #)
+    # )
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -744,17 +743,23 @@ if __name__ == "__main__":
     dependencies = []
 
     for job in data["task_order"]:
-        directories = data['jobs'][job]['directories']
-        for round_id in directories['rounds']:
-            root_dir = '{}/{}'.format(directories["root"],data["jobs"][job]["task_name"])  if round_id is None else '{}/{}/{}'.format(directories["root"], data["jobs"][job]["task_name"], round_id)
-            
+        directories = data["jobs"][job]["directories"]
+        for round_id in directories["rounds"]:
+            root_dir = (
+                "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
+                if round_id is None
+                else "{}/{}/{}".format(
+                    directories["root"], data["jobs"][job]["task_name"], round_id
+                )
+            )
+
             for script_dir in directories["scripts"].values():
                 deps = slurmify(
                     root_dir=root_dir,
                     task_name=data["jobs"][job]["task_name"],
                     task_type=job,
                     script_dir=script_dir,
-                    log_dir=directories['logs'],
+                    log_dir=directories["logs"],
                     resources=resources,
                     initial_dependencies=dependencies,
                 )
@@ -768,13 +773,19 @@ if __name__ == "__main__":
     create_bash_script(filename=workflow_scripts)
 
     for job in data["task_order"]:
-        directories = data['jobs'][job]['directories']
-        for round_id in directories['rounds']:
-            root_dir = '{}/{}'.format(directories["root"],data["jobs"][job]["task_name"])  if round_id is None else '{}/{}/{}'.format(directories["root"], data["jobs"][job]["task_name"], round_id)
+        directories = data["jobs"][job]["directories"]
+        for round_id in directories["rounds"]:
+            root_dir = (
+                "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
+                if round_id is None
+                else "{}/{}/{}".format(
+                    directories["root"], data["jobs"][job]["task_name"], round_id
+                )
+            )
             create_workflow_script(
                 root_dir=root_dir,
                 task_name=data["jobs"][job]["task_name"],
                 task_type=job,
-                script_dir=directories['scripts']["all"],
+                script_dir=directories["scripts"]["all"],
                 workflow_filename=workflow_scripts,
             )
