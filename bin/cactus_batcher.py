@@ -439,7 +439,7 @@ def get_slurm_submission(
             )
         )
 
-    sbatch.append('--wrap "{}")'.format(";".join(commands)))
+    sbatch.append('--wrap "singularity run /apps/cactus/images/cactus.sif {}")'.format(";".join(commands)))
 
     return sbatch
 
@@ -502,7 +502,7 @@ def slurmify(
 
             # set Cactus log file for Toil outputs
             if command_key != "halAppendSubtree" or command_key != "hal2fasta":
-                line = line + " --logFile {}/{}-{}.log".format(log_dir, command_key, job_name)
+                line = line + " --logFile {}/{}/{}/{}-{}.log".format(task_dir, task_name, log_dir, command_key, job_name)
 
             # update the extra dependency between task types
             extra_dependencies.append(variable_name)
@@ -511,7 +511,7 @@ def slurmify(
 
             # prepare slurm submission
             kwargs = {
-                "job_name": job_name,
+                "job_name": '{}-{}'.format(command_key,job_name),
                 "variable_name": variable_name,
                 "work_dir": "{}/{}".format(task_dir, task_name),
                 "log_dir": "{}/{}/{}".format(task_dir, task_name,log_dir),
