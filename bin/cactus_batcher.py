@@ -274,9 +274,30 @@ def parse_yaml(filename):
     """
 
     with open(filename, mode="r") as f:
-        return yaml.load(f, Loader=SafeLoader)
+        try:
+            return yaml.load(f, Loader=SafeLoader)
+        except yaml.YAMLError as err:
+            print(err)
+            sys.exit(1)
 
     return None
+
+
+def check_slurm_resources_info(content, keys):
+
+    errors = []
+
+    if not isinstance(content, dict):
+        errors.append("{} is not a directory".format(content))
+
+    for key in keys:
+        if not key in content:
+            errors.append('key "{}" is missing'.format(key))
+
+    if len(errors) == 0:
+        return None
+
+    return errors
 
 
 ###################################################################
@@ -643,8 +664,44 @@ if __name__ == "__main__":
     args.input_dir = os.path.abspath(args.input_dir)
     args.output_dir = os.path.abspath(args.output_dir)
 
+    ###################################################################
+    ###                        SLURM  DATA                           ##
+    ###################################################################
+
     # get SLURM resources
     resources = parse_yaml(filename=args.slurm)
+
+    # sanity check resources
+    keys = [
+        [
+            "cactus-preprocess",
+            "cactus-align",
+            "cactus-blast",
+            "hal2fasta",
+            "halAppendSubtree",
+            "regular",
+        ],
+        ["gpus", "cpus", "partition"],
+    ]
+
+    errors = check_slurm_resources_info(content=resources, keys=keys[0])
+    if errors is not None:
+        raise Exception(
+            " The following keys are missing in the YAML file:\n{}".format(
+                "\n".join(errors)
+            )
+        )
+        exit(1)
+
+    for key in resources.keys():
+        errors = check_slurm_resources_info(content=resources[key], keys=keys[1])
+        if errors is not None:
+            raise Exception(
+                ' The following keys are missing in the "{}" key:\n{}'.format(
+                    key, "\n".join(errors)
+                )
+            )
+            exit(1)
 
     # create pointer to the read function
     read_func = read_file(args.commands)
@@ -742,7 +799,7 @@ if __name__ == "__main__":
             )
 
     ###################################################################
-    ###            UPDATE ALIGNMENT ESSENTIAL DIRECTORIES            ##
+    ###       UPDATE ALIGNMENT STEP ESSENTIAL DIRECTORIES            ##
     ###################################################################
 
     # update alignment job information including "script_dir" for each round dir
@@ -761,15 +818,6 @@ if __name__ == "__main__":
         )[1]
     )
     data["jobs"][job]["directories"]["rounds"] = round_dirs
-
-    # get original dictionary structure
-    # d = data["jobs"][job]["script_dir"][0]
-
-    # make the update
-    # data["jobs"][job]["script_dir"] = list(
-    #    {key: "{}/{}".format(round_id, d[key]) for key in d.keys()}
-    #    for round_id in round_dirs
-    # )
 
     ###################################################################
     ###                  SLURM BASH SCRIPT CREATOR                   ##
@@ -800,7 +848,7 @@ if __name__ == "__main__":
             )
 
     ###################################################################
-    ###          SLURM  WORKFLOW BASH SCRIPT CREATOR                 ##
+    ###         FINAL CACTUS PIPELINE BASH SCRIPT USING SLURM        ##
     ###################################################################
 
     # create a new bash script file there
