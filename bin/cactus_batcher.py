@@ -489,7 +489,7 @@ def get_slurm_submission(
 
         # wrap the commands to use singularity
         commands = [
-            "singularity run {}".format(image) + command for command in commands
+            "singularity run {} ".format(image) + command for command in commands
         ]
 
     # wrap the commands for SLURM
