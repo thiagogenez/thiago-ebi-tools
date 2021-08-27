@@ -448,7 +448,7 @@ def get_slurm_submission(
     if dependencies is not None and len(dependencies) > 0:
         sbatch.append(
             "--dependency=afterok:${}".format(
-                ",$".join(["TASK_" + dep for dep in dependencies])
+                ":$".join(["TASK_" + dep for dep in dependencies])
             )
         )
 
@@ -472,7 +472,7 @@ def get_slurm_submission(
         ]
 
     # wrap the commands for SLURM
-    sbatch.append('--wrap "{}")'.format(";".join(commands)))
+    sbatch.append('--wrap "source ~/.bashrc; {}")'.format(";".join(commands)))
 
     return sbatch
 
