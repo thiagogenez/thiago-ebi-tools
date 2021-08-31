@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
 import argparse
-import contextlib
-import os, tempfile, stat
-import shutil
+import os
 import tempfile
+import stat
+import sys
+import shutil
 import pathlib
 import re
 from pathlib import Path
-from os import environ
 
 try:
     import yaml
@@ -17,7 +17,7 @@ except ModuleNotFoundError as err:
     # Error handling
     print(err)
     print('Please, run "pip install PyYAML" to install PyYAML module')
-    exit(1)
+    sys.exit(1)
 
 # sanity check for environment variables CACTUS_IMAGE and CACTUS_GPU_IMAGE
 try:
@@ -88,10 +88,10 @@ def read_file(filename, line_number=False):
         @filename: The name of the file to read
         @line_number: return the number along with the line
     """
-    with open(filename, mode="r") as f:
+    with open(filename, mode="r", encoding="utf-8") as file:
         number = 0
         while True:
-            line = f.readline()
+            line = file.readline()
             if not line:
                 break
             if line_number:
@@ -110,9 +110,9 @@ def create_symlinks(src_dirs, dest):
     """
     pathlib.Path(dest).mkdir(parents=True, exist_ok=True)
 
-    for i in src_dirs:
-        relativepath = os.path.relpath(i, dest)
-        fromfolderWithFoldername = dest + "/" + os.path.basename(i)
+    for src in src_dirs:
+        relativepath = os.path.relpath(src, dest)
+        fromfolderWithFoldername = dest + "/" + os.path.basename(src)
         symlink(target=relativepath, link_name=fromfolderWithFoldername, overwrite=True)
 
 
@@ -125,10 +125,10 @@ def append(filename, line, mode="a"):
     """
 
     if line:
-        with open(filename, mode) as f:
-            if f.tell() > 0:
-                f.write("\n")
-            f.write(line.strip())
+        with open(filename, mode) as file:
+            if file.tell() > 0:
+                file.write("\n")
+            file.write(line.strip())
 
 
 def mkdir(path, force=False):
@@ -225,42 +225,50 @@ def cactus_job_command_name(line):
         @line: string containing a line read from the file
 
     Returns:
-        a triple (command, extra_info, variable_name) informing:
-        - command: a string showing the given command line (cactus-preprocess, cactus-blast, cactus-align, etc.)
-        - extra_info: Info regarding the command line
-        - variable_name: a unique value for the given command line
+        a dictionary (command, id, variable_name, jobstore) informing:
+            - command: a string showing the given command line (cactus-preprocess, cactus-blast, cactus-align, etc.)
+            - id: An unique ID for the command line
+            - variable_name: a unique value for the given command line
+            - jobstore: The jobstore number if exist
+        or None; otherwise
     """
     if isinstance(line, str) and len(line) > 0:
         command = line.split()[0]
-
+        jb = None
         if "cactus" in command:
-            jb = re.findall("\d+", line.split()[1])[0]
+            jb = re.findall("\\d+", line.split()[1])[0]
             if "preprocess" in command:
-                input_names = (
+                info_id = (
                     re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
                 )
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), jb, input_names
+                    command.replace("-", "_"), jb, info_id
                 ).upper()
-                return command, input_names, variable_name
 
             elif "blast" in command or "align" in command:
-                anc_id = re.findall("--root (.*)$", line)[0].split()[0]
+                info_id = re.findall("--root (.*)$", line)[0].split()[0]
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), jb, anc_id
+                    command.replace("-", "_"), jb, info_id
                 ).upper()
-                return command, anc_id, variable_name
 
         elif command == "hal2fasta":
-            anc_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1]
-            variable_name = "{}_{}".format(command, anc_id).upper()
-            return command, anc_id, variable_name
+            info_id = re.findall("(.*) --hdf5InMemory", line)[0].split()[-1]
+            variable_name = "{}_{}".format(command, info_id).upper()
 
         elif command == "halAppendSubtree":
             parent_name = line.split()[3]
             root_name = line.split()[4]
+            info_id = "{}_{}".format(parent_name, root_name)
             variable_name = "{}_{}_{}".format(command, parent_name, root_name).upper()
-            return command, "{}_{}".format(parent_name, root_name), variable_name
+
+        return {
+            "command": command,
+            "id": info_id,
+            "variable": variable_name,
+            "jobstore": jb,
+        }
+
+    return None
 
 
 def parse_yaml(filename):
@@ -273,9 +281,9 @@ def parse_yaml(filename):
         YAML content or None otherwise
     """
 
-    with open(filename, mode="r") as f:
+    with open(filename, mode="r", encoding="utf-8") as file:
         try:
-            return yaml.load(f, Loader=SafeLoader)
+            return yaml.load(file, Loader=SafeLoader)
         except yaml.YAMLError as err:
             print(err)
             sys.exit(1)
@@ -309,9 +317,8 @@ def parse(
     read_func,
     symlink_dir,
     root_dir,
-    script_dir,
+    script_dirs,
     log_dir,
-    task_name,
     task_type,
     stop_condition,
     ext="dat",
@@ -322,17 +329,16 @@ def parse(
         @read_func: pointer to the function that yields input lines
         @symlink_dir: list of directories (as source) for symlink creation
         @root_dir: the directory to save parser's output
-        @task_name: parser rule name (preprocessor, alignment, merging)
         @task_type: type of the given task
         @stop_condition: the condition to stop this parser
-        @script_dir: list of extra directories to be created inside of @root_dir
+        @script_dirs: list of extra directories to be created inside of @root_dir
     """
 
     # dict to point to parsed files
     parsed_files = {}
 
     # Preamble - create links and directories needed to execute Cactus at @root_dir
-    if "alignments" != task_type:
+    if task_type != "alignments":
 
         # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
         create_symlinks(src_dirs=symlink_dir, dest=root_dir)
@@ -341,8 +347,8 @@ def parse(
         mkdir("{}/{}".format(root_dir, log_dir), force=True)
 
         # create script directory at root_dir
-        for i in script_dir.values():
-            mkdir("{}/{}".format(root_dir, i), force=True)
+        for script_dir in script_dirs.values():
+            mkdir("{}/{}".format(root_dir, script_dir), force=True)
 
     while True:
         # get the next line
@@ -363,15 +369,14 @@ def parse(
         if stop_condition and line.startswith(stop_condition):
             break
 
-        if "preprocessor" == task_type:
-            # define the correct filenames to write the line
-            _, input_names, _ = cactus_job_command_name(line)
+        if task_type == "preprocessor":
 
+            # define the correct filenames to write the line
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
-                root_dir, script_dir["all"], task_type, ext
+                root_dir, script_dirs["all"], task_type, ext
             )
 
-        elif "alignments" == task_type:
+        elif task_type == "alignments":
 
             # preamble - create a new round directory
             if line.startswith("### Round"):
@@ -379,7 +384,7 @@ def parse(
                 round_path = "{}/{}".format(root_dir, round_id)
 
                 # create script directory at root_dir
-                for i in script_dir.values():
+                for i in script_dirs.values():
                     mkdir("{}/{}".format(round_path, i), force=True)
 
                 # create log directory at root_dir
@@ -394,26 +399,24 @@ def parse(
             # sanity check
             assert "round_path" in locals()
 
-            # get Anc_id from the current command-line
-            command, anc_id, _ = cactus_job_command_name(line)
+            # extract line info
+            info = cactus_job_command_name(line)
 
             # update filenames to write the line
             parsed_files["all"] = "{}/{}/{}.{}".format(
-                round_path, script_dir["all"], anc_id, ext
+                round_path, script_dirs["all"], info["id"], ext
             )
 
         # update filenames to write the line
-        elif "merging" == task_type:
+        elif task_type == "merging":
 
             # get parent and root node from the command line
-            _, parent_root_name, _ = cactus_job_command_name(line)
-
             parsed_files["all"] = "{}/{}/all-{}.{}".format(
-                root_dir, script_dir["all"], task_type, ext
+                root_dir, script_dirs["all"], task_type, ext
             )
 
         # write the line in the correct files
-        for i in parsed_files.keys():
+        for key, values in parsed_files.items():
             append(filename=parsed_files[i], line=line)
 
 
@@ -432,6 +435,7 @@ def get_slurm_submission(
     cpus,
     commands,
     dependencies,
+    jobstore,
     singularity=True,
 ):
 
@@ -500,8 +504,6 @@ def get_slurm_submission(
 
 def slurmify(
     root_dir,
-    task_name,
-    task_type,
     script_dirs,
     log_dir,
     resources,
@@ -550,51 +552,47 @@ def slurmify(
             # remove rubbish
             line = line.strip()
 
-            # get the cactus command and variable name create that will serve as bash variable name and SLURM job name
-            command_key, job_name, variable_name = cactus_job_command_name(line)
+            # extract line info from the current command line to create key info for SLURM
+            info = cactus_job_command_name(line)
 
             # set Cactus log file for Toil outputs
-            if command_key != "halAppendSubtree" and command_key != "hal2fasta":
+            if info["command"] != "halAppendSubtree" and info["command"] != "hal2fasta":
                 line = line + " --logFile {}/{}/{}-{}.log".format(
-                    root_dir, log_dir, command_key, job_name
+                    root_dir, log_dir, info["command"], info["id"]
                 )
 
-            # Set the working directory of the batch script to directory before it is executed
-            work_dir = "{}".format(root_dir)
-
             # update the extra dependency between task types
-            extra_dependencies.append(variable_name)
-            if command_key == "cactus-blast" or command_key == "cactus-align":
+            extra_dependencies.append(info["variable"])
+            if info["command"] == "cactus-blast" or info["command"] == "cactus-align":
                 extra_dependencies.pop()
 
-            # prepare SLURM submission
-            kwargs = {
-                "job_name": "{}-{}".format(command_key, job_name),
-                "variable_name": variable_name,
-                "work_dir": work_dir,
-                "log_dir": "{}/{}".format(root_dir, log_dir),
-                "partition": "{}".format(resources[command_key]["partition"]),
-                "cpus": resources[command_key]["cpus"],
-                "gpus": resources[command_key]["gpus"],
-                "commands": ["{}".format(line.strip())],
-                "dependencies": intra_dependencies,
-            }
-
             # get the SLURM string call
-            sbatch = get_slurm_submission(**kwargs)
+            sbatch = get_slurm_submission(
+                job_name="{}-{}".format(info["command"], info["id"]),
+                variable_name=info["variable"],
+                work_dir="{}".format(root_dir),
+                log_dir="{}/{}".format(root_dir, log_dir),
+                partition="{}".format(resources[info["command"]]["partition"]),
+                gpus=resources[info["command"]]["gpus"],
+                cpus=resources[info["command"]]["cpus"],
+                commands=["{}".format(line.strip())],
+                dependencies=intra_dependencies,
+                jobstore=info["jobstore"],
+                singularity=True,
+            )
 
-            # update the intra dependency list between command_key
+            # update the intra dependency list between info['command']
             if (
-                command_key == "halAppendSubtree"
-                or command_key == "cactus-blast"
-                or command_key == "cactus-align"
+                info["command"] == "halAppendSubtree"
+                or info["command"] == "cactus-blast"
+                or info["command"] == "cactus-align"
             ):
                 intra_dependencies.clear()
-                intra_dependencies.append(variable_name)
+                intra_dependencies.append(info["variable"])
 
             # create individual bash script
             individual_bashscript_filename = "{}/{}/{}-{}.sh".format(
-                root_dir, script_dirs["separated"], command_key, job_name
+                root_dir, script_dirs["separated"], info["command"], info["id"]
             )
             create_bash_script(filename=individual_bashscript_filename)
 
@@ -616,9 +614,15 @@ def slurmify(
 ###################################################################
 
 
-def create_workflow_script(
-    root_dir, task_name, task_type, script_dir, workflow_filename
-):
+def create_workflow_script(root_dir, task_type, script_dir, workflow_filename):
+    """Create Cactus pipeline using Slurm dependencies
+
+    Args:
+        @root_dir: root directory where @task_type's bash local scripts are
+        @task_type: type of the given task
+        @script_dir: the directory where @task_type's scripts are
+        @workflow_filename: the name of the bash script that contains the Cactus pipeline
+    """
 
     # adding preprocess
     append(filename=workflow_filename, line="\n### - {} step\n".format(task_type))
@@ -691,7 +695,6 @@ if __name__ == "__main__":
                 "\n".join(errors)
             )
         )
-        exit(1)
 
     for key in resources.keys():
         errors = check_slurm_resources_info(content=resources[key], keys=keys[1])
@@ -701,7 +704,6 @@ if __name__ == "__main__":
                     key, "\n".join(errors)
                 )
             )
-            exit(1)
 
     # create pointer to the read function
     read_func = read_file(args.commands)
@@ -793,7 +795,6 @@ if __name__ == "__main__":
                 root_dir=root_dir,
                 script_dir=data["jobs"][job]["directories"]["scripts"],
                 log_dir=data["jobs"][job]["directories"]["logs"],
-                task_name=data["jobs"][job]["task_name"],
                 task_type=job,
                 stop_condition=data["jobs"][job]["stop_condition"],
             )
@@ -839,8 +840,6 @@ if __name__ == "__main__":
             # create SLURM batches jobs
             dependencies = slurmify(
                 root_dir=root_dir,
-                task_name=data["jobs"][job]["task_name"],
-                task_type=job,
                 script_dirs=directories["scripts"],
                 log_dir=directories["logs"],
                 resources=resources,
@@ -867,7 +866,6 @@ if __name__ == "__main__":
             )
             create_workflow_script(
                 root_dir=root_dir,
-                task_name=data["jobs"][job]["task_name"],
                 task_type=job,
                 script_dir=directories["scripts"]["all"],
                 workflow_filename=workflow_scripts,
