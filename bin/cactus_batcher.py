@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""This script prompts a user to parse the output of cactus-prepare
+in order to a bash script that wraps the cactus pipeline into Slurm jobs"""
 
 import argparse
 import os
@@ -13,24 +15,20 @@ from pathlib import Path
 try:
     import yaml
     from yaml.loader import SafeLoader
-except ModuleNotFoundError as err:
+except ModuleNotFoundError as module_err:
     # Error handling
-    print(err)
+    print(module_err)
     print('Please, run "pip install PyYAML" to install PyYAML module')
     sys.exit(1)
 
 # sanity check for environment variables CACTUS_IMAGE and CACTUS_GPU_IMAGE
-try:
-    for i in ["CACTUS_IMAGE", "CACTUS_GPU_IMAGE"]:
-        if os.environ.get(i) is None:
-            raise Exception(
-                "Please set the environment variable {} to point to singularity image.".format(
-                    i
-                )
+for i in ["CACTUS_IMAGE", "CACTUS_GPU_IMAGE"]:
+    if os.environ.get(i) is None:
+        raise Exception(
+            "Please set the environment variable {} to point to singularity image.".format(
+                i
             )
-except Exception as err:
-    print(err)
-    sys.exit(1)
+        )
 
 
 ###################################################################
@@ -122,10 +120,11 @@ def append(filename, line, mode="a"):
     Args:
         @filename: the name of the file to append information
         @line: string to append in the file as a line
+        @mode: mode to open the file
     """
 
     if line:
-        with open(filename, mode) as file:
+        with open(filename, mode, encoding="utf-8") as file:
             if file.tell() > 0:
                 file.write("\n")
             file.write(line.strip())
@@ -226,7 +225,7 @@ def cactus_job_command_name(line):
 
     Returns:
         a dictionary (command, id, variable_name, jobstore) informing:
-            - command: a string showing the given command line (cactus-preprocess, cactus-blast, cactus-align, etc.)
+            - command: a string showing the name of the binary
             - id: An unique ID for the command line
             - variable_name: a unique value for the given command line
             - jobstore: The jobstore number if exist
@@ -234,21 +233,23 @@ def cactus_job_command_name(line):
     """
     if isinstance(line, str) and len(line) > 0:
         command = line.split()[0]
-        jb = None
+        jobstore = None
+
         if "cactus" in command:
-            jb = re.findall("\\d+", line.split()[1])[0]
+            jobstore = line.split()[1]
+
             if "preprocess" in command:
                 info_id = (
                     re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
                 )
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), jb, info_id
+                    command.replace("-", "_"), jobstore, info_id
                 ).upper()
 
             elif "blast" in command or "align" in command:
                 info_id = re.findall("--root (.*)$", line)[0].split()[0]
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), jb, info_id
+                    command.replace("-", "_"), jobstore, info_id
                 ).upper()
 
         elif command == "hal2fasta":
@@ -265,7 +266,7 @@ def cactus_job_command_name(line):
             "command": command,
             "id": info_id,
             "variable": variable_name,
-            "jobstore": jb,
+            "jobstore": jobstore,
         }
 
     return None
@@ -292,7 +293,15 @@ def parse_yaml(filename):
 
 
 def check_slurm_resources_info(content, keys):
+    """Check if the given slurm configuration file is correct.
 
+    Args:
+        @content: the dictionary containing the content from the slurm configuration file
+        @keys: the keys that must be in the content
+
+    Returns:
+        None if everything is correct or a list of errors otherwise.
+    """
     errors = []
 
     if not isinstance(content, dict):
@@ -340,7 +349,8 @@ def parse(
     # Preamble - create links and directories needed to execute Cactus at @root_dir
     if task_type != "alignments":
 
-        # For the alignment step, these links must be created inside of each round  directory - which is done inside of the while loop below
+        # For the alignment step, these links must be created inside of each round  directory,
+        # which is done inside of the while loop below
         create_symlinks(src_dirs=symlink_dir, dest=root_dir)
 
         # create log directory at root_dir
@@ -384,8 +394,8 @@ def parse(
                 round_path = "{}/{}".format(root_dir, round_id)
 
                 # create script directory at root_dir
-                for i in script_dirs.values():
-                    mkdir("{}/{}".format(round_path, i), force=True)
+                for script_dir in script_dirs.values():
+                    mkdir("{}/{}".format(round_path, script_dir), force=True)
 
                 # create log directory at root_dir
                 mkdir("{}/{}".format(round_path, log_dir), force=True)
@@ -416,8 +426,8 @@ def parse(
             )
 
         # write the line in the correct files
-        for key, values in parsed_files.items():
-            append(filename=parsed_files[key], line=line)
+        for filename in parsed_files.values():
+            append(filename=filename, line=line)
 
 
 ###################################################################
@@ -433,9 +443,8 @@ def get_slurm_submission(
     partition,
     gpus,
     cpus,
-    commands,
+    command,
     dependencies,
-    jobstore,
     singularity=True,
 ):
 
@@ -448,7 +457,7 @@ def get_slurm_submission(
         @partition: Slurm partition name to dispatch the job
         @gpus: Amount of GPUs to run the job
         @cpus: Amount of CPUs to run the job
-        @commands: List of commands that the Slurm job must run
+        @command: Command to be wrapped by Slurm
         @dependencies: list of Job IDs that this job depends on
         @singularity: True if @commands should run via singularity
     """
@@ -477,10 +486,6 @@ def get_slurm_submission(
             )
         )
 
-    # sanity check
-    if isinstance(commands, str):
-        commands = list(commands)
-
     # define singularity
     if singularity:
 
@@ -492,12 +497,10 @@ def get_slurm_submission(
             image = "--nv {}".format(os.environ.get("CACTUS_GPU_IMAGE"))
 
         # wrap the commands to use singularity
-        commands = [
-            "singularity run {} ".format(image) + command for command in commands
-        ]
+        command = "singularity run {} {}".format(image, command)
 
     # wrap the commands for SLURM
-    sbatch.append('--wrap "source ~/.bashrc; {}")'.format(";".join(commands)))
+    sbatch.append('--wrap "source ~/.bashrc; {}")'.format(command))
 
     return sbatch
 
@@ -514,11 +517,10 @@ def slurmify(
 
     Args:
         @root_dir: Location of the cactus task
-        @task_name: Name of the cactus task
-        @task_type: type of the given task
         @script_dirs: Directory to read data and create scripts
         @log_dir: Log path for Cactus call
         @resources: Slurm resources information
+        @initial_dependencies: essential dependencies set before
         @ext: Extension for the files that contains the command lines
     """
 
@@ -546,64 +548,76 @@ def slurmify(
         # dependency SLURM variable
         intra_dependencies = list(initial_dependencies)
 
-        for line in read_file(
+        for commands in read_file(
             filename="{}/{}/{}".format(root_dir, script_dirs["all"], filename)
         ):
-            # remove rubbish
-            line = line.strip()
+            # just in case more than one command per line
+            for line in commands.split(";"):
+                # remove rubbish
+                line = line.strip()
 
-            # extract line info from the current command line to create key info for SLURM
-            info = cactus_job_command_name(line)
+                # extract line info from the current command line to create key info for SLURM
+                info = cactus_job_command_name(line)
 
-            # set Cactus log file for Toil outputs
-            if info["command"] != "halAppendSubtree" and info["command"] != "hal2fasta":
-                line = line + " --logFile {}/{}/{}-{}.log".format(
-                    root_dir, log_dir, info["command"], info["id"]
+                # set Cactus log file for Toil outputs
+                if (
+                    info["command"] != "halAppendSubtree"
+                    and info["command"] != "hal2fasta"
+                ):
+                    line = line + " --logFile {}/{}/{}-{}.log".format(
+                        root_dir, log_dir, info["command"], info["id"]
+                    )
+
+                # update the extra dependency between task types
+                extra_dependencies.append(info["variable"])
+                if (
+                    info["command"] == "cactus-blast"
+                    or info["command"] == "cactus-align"
+                ):
+                    extra_dependencies.pop()
+
+                # enabling restart option for Cactus if a jobstore folder exists
+                if info["jobstore"] is not None:
+                    if os.path.isdir("{}/{}".format(root_dir, info["jobstore"])):
+                        command = "{} --restart".format(command)
+
+                # get the SLURM string call
+                sbatch = get_slurm_submission(
+                    job_name="{}-{}".format(info["command"], info["id"]),
+                    variable_name=info["variable"],
+                    work_dir="{}".format(root_dir),
+                    log_dir="{}/{}".format(root_dir, log_dir),
+                    partition="{}".format(resources[info["command"]]["partition"]),
+                    gpus=resources[info["command"]]["gpus"],
+                    cpus=resources[info["command"]]["cpus"],
+                    command="{}".format(line.strip()),
+                    dependencies=intra_dependencies,
+                    singularity=True,
                 )
 
-            # update the extra dependency between task types
-            extra_dependencies.append(info["variable"])
-            if info["command"] == "cactus-blast" or info["command"] == "cactus-align":
-                extra_dependencies.pop()
+                # update the intra dependency list between info['command']
+                if (
+                    info["command"] == "halAppendSubtree"
+                    or info["command"] == "cactus-blast"
+                    or info["command"] == "cactus-align"
+                ):
+                    intra_dependencies.clear()
+                    intra_dependencies.append(info["variable"])
 
-            # get the SLURM string call
-            sbatch = get_slurm_submission(
-                job_name="{}-{}".format(info["command"], info["id"]),
-                variable_name=info["variable"],
-                work_dir="{}".format(root_dir),
-                log_dir="{}/{}".format(root_dir, log_dir),
-                partition="{}".format(resources[info["command"]]["partition"]),
-                gpus=resources[info["command"]]["gpus"],
-                cpus=resources[info["command"]]["cpus"],
-                commands=["{}".format(line.strip())],
-                dependencies=intra_dependencies,
-                jobstore=info["jobstore"],
-                singularity=True,
-            )
+                # create individual bash script
+                individual_bashscript_filename = "{}/{}/{}-{}.sh".format(
+                    root_dir, script_dirs["separated"], info["command"], info["id"]
+                )
+                create_bash_script(filename=individual_bashscript_filename)
 
-            # update the intra dependency list between info['command']
-            if (
-                info["command"] == "halAppendSubtree"
-                or info["command"] == "cactus-blast"
-                or info["command"] == "cactus-align"
-            ):
-                intra_dependencies.clear()
-                intra_dependencies.append(info["variable"])
+                # store it in the individual bash script
+                append(filename=individual_bashscript_filename, line=" ".join(sbatch))
 
-            # create individual bash script
-            individual_bashscript_filename = "{}/{}/{}-{}.sh".format(
-                root_dir, script_dirs["separated"], info["command"], info["id"]
-            )
-            create_bash_script(filename=individual_bashscript_filename)
-
-            # store it in the individual bash script
-            append(filename=individual_bashscript_filename, line=" ".join(sbatch))
-
-            # store it in the aggregated bash script
-            append(
-                filename=aggregated_bashscript_filename,
-                line="source {}".format(individual_bashscript_filename),
-            )
+                # store it in the aggregated bash script
+                append(
+                    filename=aggregated_bashscript_filename,
+                    line="source {}".format(individual_bashscript_filename),
+                )
 
     # dependencies for the next batch
     return extra_dependencies
@@ -644,9 +658,7 @@ def create_workflow_script(root_dir, task_type, script_dir, workflow_filename):
         if os.path.isfile(script) and not os.access(script, os.X_OK):
             continue
 
-        line = ["source", script]
-
-        append(filename=workflow_filename, line=" ".join(line))
+        append(filename=workflow_filename, line=" ".join(["source", script]))
 
 
 ###################################################################
@@ -673,10 +685,10 @@ if __name__ == "__main__":
     ###################################################################
 
     # get SLURM resources
-    resources = parse_yaml(filename=args.slurm)
+    slurm_config = parse_yaml(filename=args.slurm)
 
     # sanity check resources
-    keys = [
+    slurm_key_data = [
         [
             "cactus-preprocess",
             "cactus-align",
@@ -688,25 +700,29 @@ if __name__ == "__main__":
         ["gpus", "cpus", "partition"],
     ]
 
-    errors = check_slurm_resources_info(content=resources, keys=keys[0])
-    if errors is not None:
+    missing_slurm_data = check_slurm_resources_info(
+        content=slurm_config, keys=slurm_key_data[0]
+    )
+    if missing_slurm_data is not None:
         raise Exception(
             " The following keys are missing in the YAML file:\n{}".format(
-                "\n".join(errors)
+                "\n".join(missing_slurm_data)
             )
         )
 
-    for key in resources.keys():
-        errors = check_slurm_resources_info(content=resources[key], keys=keys[1])
-        if errors is not None:
+    for node_type in slurm_config.keys():
+        missing_slurm_data = check_slurm_resources_info(
+            content=slurm_config[node_type], keys=slurm_key_data[1]
+        )
+        if missing_slurm_data is not None:
             raise Exception(
                 ' The following keys are missing in the "{}" key:\n{}'.format(
-                    key, "\n".join(errors)
+                    node_type, "\n".join(missing_slurm_data)
                 )
             )
 
     # create pointer to the read function
-    read_func = read_file(args.commands)
+    reader = read_file(args.commands)
 
     ###################################################################
     ###                          DATA                                ##
@@ -774,25 +790,26 @@ if __name__ == "__main__":
     while True:
 
         # get a line from the input file
-        line = next(read_func, "")
+        raw_line = next(reader, "")
 
         # parsing job done
-        if not line:
+        if not raw_line:
             break
 
         # wait...
-        if not line.startswith(data["trigger_parsing"]):
+        if not raw_line.startswith(data["trigger_parsing"]):
             continue
 
         # starting parsing procedure
         for job in data["task_order"]:
-            root_dir = "{}/{}".format(
-                data["jobs"][job]["directories"]["root"], data["jobs"][job]["task_name"]
-            )
+
             parse(
-                read_func=read_func,
+                read_func=reader,
                 symlink_dir=data["jobs"][job]["directories"]["symlinks"],
-                root_dir=root_dir,
+                root_dir="{}/{}".format(
+                    data["jobs"][job]["directories"]["root"],
+                    data["jobs"][job]["task_name"],
+                ),
                 script_dirs=data["jobs"][job]["directories"]["scripts"],
                 log_dir=data["jobs"][job]["directories"]["logs"],
                 task_type=job,
@@ -825,25 +842,25 @@ if __name__ == "__main__":
     ###################################################################
 
     # list to carry dependencies between job types, e.g., preprocess, alignment, merging
-    dependencies = []
+    slurm_job_dependencies = []
 
     for job in data["task_order"]:
         directories = data["jobs"][job]["directories"]
-        for round_id in directories["rounds"]:
-            root_dir = (
-                "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
-                if round_id is None
-                else "{}/{}/{}".format(
-                    directories["root"], data["jobs"][job]["task_name"], round_id
-                )
-            )
+        for round_dir in directories["rounds"]:
+
             # create SLURM batches jobs
-            dependencies = slurmify(
-                root_dir=root_dir,
+            slurm_job_dependencies = slurmify(
+                root_dir=(
+                    "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
+                    if round_dir is None
+                    else "{}/{}/{}".format(
+                        directories["root"], data["jobs"][job]["task_name"], round_dir
+                    )
+                ),
                 script_dirs=directories["scripts"],
                 log_dir=directories["logs"],
-                resources=resources,
-                initial_dependencies=dependencies,
+                resources=slurm_config,
+                initial_dependencies=slurm_job_dependencies,
             )
 
     ###################################################################
@@ -856,16 +873,16 @@ if __name__ == "__main__":
 
     for job in data["task_order"]:
         directories = data["jobs"][job]["directories"]
-        for round_id in directories["rounds"]:
-            root_dir = (
-                "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
-                if round_id is None
-                else "{}/{}/{}".format(
-                    directories["root"], data["jobs"][job]["task_name"], round_id
-                )
-            )
+        for round_dir in directories["rounds"]:
+
             create_workflow_script(
-                root_dir=root_dir,
+                root_dir=(
+                    "{}/{}".format(directories["root"], data["jobs"][job]["task_name"])
+                    if round_dir is None
+                    else "{}/{}/{}".format(
+                        directories["root"], data["jobs"][job]["task_name"], round_dir
+                    )
+                ),
                 task_type=job,
                 script_dir=directories["scripts"]["all"],
                 workflow_filename=workflow_scripts,
