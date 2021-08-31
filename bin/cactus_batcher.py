@@ -243,13 +243,17 @@ def cactus_job_command_name(line):
                     re.search("--inputNames (.*?) --", line).group(1).replace(" ", "_")
                 )
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), re.sub('[^a-zA-Z0-9 \n\\.]', '_', jobstore), info_id
+                    command.replace("-", "_"),
+                    re.sub("[^a-zA-Z0-9 \n\\.]", "_", jobstore),
+                    info_id,
                 ).upper()
 
             elif "blast" in command or "align" in command:
                 info_id = re.findall("--root (.*)$", line)[0].split()[0]
                 variable_name = "{}_{}_{}".format(
-                    command.replace("-", "_"), re.sub('[^a-zA-Z0-9 \n\\.]', '_', jobstore), info_id
+                    command.replace("-", "_"),
+                    re.sub("[^a-zA-Z0-9 \n\\.]", "_", jobstore),
+                    info_id,
                 ).upper()
 
         elif command == "hal2fasta":
