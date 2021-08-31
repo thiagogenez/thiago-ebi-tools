@@ -579,7 +579,7 @@ def slurmify(
                 # enabling restart option for Cactus if a jobstore folder exists
                 if info["jobstore"] is not None:
                     if os.path.isdir("{}/{}".format(root_dir, info["jobstore"])):
-                        command = "{} --restart".format(command)
+                        line = "{} --restart".format(line)
 
                 # get the SLURM string call
                 sbatch = get_slurm_submission(
