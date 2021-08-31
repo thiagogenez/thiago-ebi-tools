@@ -500,7 +500,7 @@ def get_slurm_submission(
         command = "singularity run {} {}".format(image, command)
 
     # wrap the commands for SLURM
-    sbatch.append('--wrap "source ~/.bashrc; {}")'.format(command))
+    sbatch.append('--wrap "source ~/.bash_profile && {}")'.format(command))
 
     return sbatch
 
