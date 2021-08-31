@@ -417,7 +417,7 @@ def parse(
 
         # write the line in the correct files
         for key, values in parsed_files.items():
-            append(filename=parsed_files[i], line=line)
+            append(filename=parsed_files[key], line=line)
 
 
 ###################################################################
@@ -793,7 +793,7 @@ if __name__ == "__main__":
                 read_func=read_func,
                 symlink_dir=data["jobs"][job]["directories"]["symlinks"],
                 root_dir=root_dir,
-                script_dir=data["jobs"][job]["directories"]["scripts"],
+                script_dirs=data["jobs"][job]["directories"]["scripts"],
                 log_dir=data["jobs"][job]["directories"]["logs"],
                 task_type=job,
                 stop_condition=data["jobs"][job]["stop_condition"],
