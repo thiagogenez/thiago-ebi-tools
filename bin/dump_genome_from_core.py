@@ -96,7 +96,7 @@ def download_file(host, port, core_db, fasta_filename, mask="soft"):
     return subprocess_call(command=perl_call, ibsub=True, shell=False)
 
 
-def get_name(host, core_db):
+def query_coredb(host, core_db, query):
     """Get the correct meta production name
 
     Args:
@@ -112,7 +112,7 @@ def get_name(host, core_db):
         "{}".format(core_db),
         "-ss",
         "-e",
-        'SELECT meta_value FROM meta WHERE meta_key="species.production_name";',
+        "{}".format(query),
     ]
     return subprocess_call(command=mysql_call)
 
@@ -132,13 +132,28 @@ def parse_yaml(file, dest):
         port = data["port"]
 
         for core_db in data["core_db"]:
-            name = get_name(host=host, core_db=core_db)
-            if name is not None:
+            specie_name = query_coredb(
+                host=host,
+                core_db=core_db,
+                query='SELECT meta_value FROM meta WHERE meta_key="species.production_name";',
+            )
+
+            # in case gca is presented in the specie name
+            if "gca" not in specie_name:
+                gca_number = query_coredb(
+                    host=host,
+                    core_db=core_db,
+                    query='SELECT meta_value FROM meta WHERE meta_key="assembly.accession";',
+                )
+                gca_number = gca_number.replace(".", "v").lower()
+                specie_name = "{}_{}".format(specie_name, gca_number)
+
+            if specie_name is not None:
                 download_file(
                     host=host,
                     port=port,
                     core_db=core_db,
-                    fasta_filename="{}/{}.fa".format(dest, name),
+                    fasta_filename="{}/{}.fa".format(dest, specie_name),
                 )
 
 
@@ -158,7 +173,11 @@ if __name__ == "__main__":
             args.output = os.path.abspath(args.output)
 
         if not os.path.isdir(args.output):
-            print('{} does not exist for output, please create it first'.format(args.output))
+            print(
+                "{} does not exist for output, please create it first".format(
+                    args.output
+                )
+            )
             sys.exit(1)
 
         parse_yaml(file=f, dest=args.output)
