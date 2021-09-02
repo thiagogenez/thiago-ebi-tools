@@ -4,7 +4,7 @@
 import argparse
 import subprocess
 import os
-
+import sys
 
 try:
     import yaml
@@ -156,5 +156,9 @@ if __name__ == "__main__":
             args.output = os.path.dirname(os.path.realpath(f.name))
         else:
             args.output = os.path.abspath(args.output)
+
+        if os.path.isdir(args.output):
+            print('{} does not exist for output, please create it first'.format(args.output))
+            sys.exit(1)
 
         parse_yaml(file=f, dest=args.output)
