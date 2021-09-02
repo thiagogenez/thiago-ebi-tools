@@ -157,7 +157,7 @@ if __name__ == "__main__":
         else:
             args.output = os.path.abspath(args.output)
 
-        if os.path.isdir(args.output):
+        if not os.path.isdir(args.output):
             print('{} does not exist for output, please create it first'.format(args.output))
             sys.exit(1)
 
