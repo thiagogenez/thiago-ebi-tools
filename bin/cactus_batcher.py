@@ -244,7 +244,7 @@ def cactus_job_command_name(line):
                 )
                 variable_name = "{}_{}_{}".format(
                     command.replace("-", "_"),
-                    re.sub("[^a-zA-Z0-9 \n\\.]", "_", jobstore),
+                    jobstore,
                     info_id,
                 ).upper()
 
@@ -252,7 +252,7 @@ def cactus_job_command_name(line):
                 info_id = re.findall("--root (.*)$", line)[0].split()[0]
                 variable_name = "{}_{}_{}".format(
                     command.replace("-", "_"),
-                    re.sub("[^a-zA-Z0-9 \n\\.]", "_", jobstore),
+                    jobstore,
                     info_id,
                 ).upper()
 
@@ -269,7 +269,7 @@ def cactus_job_command_name(line):
         return {
             "command": command,
             "id": info_id,
-            "variable": variable_name,
+            "variable": re.sub("[^a-zA-Z0-9]", "_", variable_name),
             "jobstore": jobstore,
         }
 
