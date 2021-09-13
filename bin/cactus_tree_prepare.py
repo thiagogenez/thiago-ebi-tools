@@ -112,16 +112,11 @@ def create_new_tree(tree_content, assemblies_content, format):
                 fasta["used"] = True
                 break
 
-        if leaf.branch_length is None:
-            leaf.branch_length = ''
-
         if not fasta["used"]:
             print("Not match any for {}".format(leaf.name))
 
     # remove labels on non-leaf nodes
     for non_leaf in tree_content["tree"].get_nonterminals():
-        if non_leaf is None:
-            non_leaf.branch_length = ''
         non_leaf.confidence = None
 
     Phylo.write(
@@ -177,7 +172,7 @@ def add_header(
     """
 
     with open(cactus_prepare_filename, mode="r") as f:
-        new_content = f.read()
+        new_content = f.read().replace(':None', '')
 
     with open(tree_filename, mode="r") as f:
         old_content = f.read()
