@@ -129,7 +129,7 @@ def create_new_tree(tree_content, assemblies_content, format):
         file=tree_content["path"],
         format=format,
         format_branch_length="%s",
-        format_confidence="%s",
+        branch_length_only=True
     )
 
     # sanity check
