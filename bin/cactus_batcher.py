@@ -507,7 +507,7 @@ def get_slurm_submission(
     # real wrapped job
     job_filename = script_filename.replace(".sh", "-job.sh")
     create_bash_script(filename=job_filename)
-    append(filename=job_filename, line="\n".join(["bash ~/.bashrc"] + command))
+    append(filename=job_filename, line="\n".join(["bash ~/.bashrc", command]))
 
     # wrap the commands for SLURM
     sbatch.append('--wrap "bash {}")'.format(job_filename))
