@@ -154,7 +154,7 @@ def make_executable(path):
     os.chmod(path, st.st_mode | stat.S_IEXEC)
 
 
-def create_bash_script(filename, shebang="#!/bin/bash"):
+def create_bash_script(filename, chmod_x=True, shebang="#!/bin/bash"):
     """Create executable bash script with shebang on it
 
     Args:
@@ -165,7 +165,8 @@ def create_bash_script(filename, shebang="#!/bin/bash"):
     append(filename=filename, mode="w", line=shebang)
 
     # chmod +x on it
-    make_executable(path=filename)
+    if chmod_x:
+        make_executable(path=filename)
 
 
 def create_argparser():
