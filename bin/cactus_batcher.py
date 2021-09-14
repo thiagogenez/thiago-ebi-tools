@@ -516,7 +516,7 @@ def get_slurm_submission(
     append(filename=job_filename, line="\n\n".join(jobs))
 
     # wrap the commands for SLURM
-    sbatch.append('--wrap "bash {}")'.format(job_filename))
+    sbatch.append('--wrap "source {}")'.format(job_filename))
 
     # store it in the individual bash script
     append(filename=script_filename, line=" ".join(sbatch))
