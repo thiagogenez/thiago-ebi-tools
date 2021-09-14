@@ -510,7 +510,7 @@ def get_slurm_submission(
     jobs = ["source ~/.google_env_loader.sh", command]
 
     if os.environ.get("CACTUS_USAGE_LOGGER") is not None:
-        jobs.insert(1, "bash ~/git/thiago-ebi-tools/bin/usage.sh {} -o {}/{}.usage".format("" if gpus is None else "-g", log_dir, job_name))
+        jobs.insert(1, "bash ~/git/thiago-ebi-tools/bin/usage.sh {} -o {}/{}.usage &".format("" if gpus is None else "-g", log_dir, job_name))
     
     # write jobs to the file
     append(filename=job_filename, line="\n\n".join(jobs))
