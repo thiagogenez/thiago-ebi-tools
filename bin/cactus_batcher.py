@@ -507,10 +507,13 @@ def get_slurm_submission(
     # real wrapped job
     job_filename = script_filename.replace(".sh", "-job.sh")
     create_bash_script(filename=job_filename)
-    jobs = ["bash ~/.bashrc", command]
+    jobs = ["source ~/.google_env_loader.sh", command]
 
+    if os.environ.get("CACTUS_USAGE_LOGGER") is not None:
+        jobs.insert(1, "bash ~/git/thiago-ebi-tools/bin/usage.sh {} -o {}/{}.usage".format("" if gpus is None else "-g", log_dir, job_name))
+    
     # write jobs to the file
-    append(filename=job_filename, line="\n".join(jobs))
+    append(filename=job_filename, line="\n\n".join(jobs))
 
     # wrap the commands for SLURM
     sbatch.append('--wrap "bash {}")'.format(job_filename))
