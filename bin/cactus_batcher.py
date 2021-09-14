@@ -507,7 +507,6 @@ def get_slurm_submission(
 
     # real wrapped job
     job_filename = script_filename.replace(".sh", "-job.sh")
-    create_bash_script(filename=job_filename)
     jobs = ["source ~/.google_env_loader.sh", command]
 
     if os.environ.get("CACTUS_USAGE_LOGGER") is not None:
