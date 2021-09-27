@@ -112,6 +112,7 @@ while true; do
   if [[ "$GPU" == "YES" ]]; then
     # GPU parser is slower, so get it first
     nvidia-smi > $NVIDIA_LOG
+    sleep 2
     AMOUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
     GPU_USAGE=$(grep "%" $NVIDIA_LOG | awk '{print $13}' | cut -d'%' -f1  | awk '{ sum += $1 } END {  if (NR > 0) print(sum / NR) }')
     GPU_MEM_USAGE=$(grep "MiB" $NVIDIA_LOG | head -$AMOUNT | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
@@ -119,7 +120,6 @@ while true; do
     # nvidia-smi is a bit slow, so simulate a pause here
     sleep 5
   fi
-  sleep 30
 
   #SYSTEM-WIDE
   MEM_USAGE=$(free -t | awk 'FNR == 2 {print ($3/$2)*100}')
@@ -160,7 +160,8 @@ while true; do
 
   # if cactus process is dead, exit the script
   ps -p $cactus_pid > /dev/null || break
-
+  
+  sleep 20
 done
 
 echo "$(basename $0) finalised"
