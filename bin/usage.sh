@@ -119,6 +119,7 @@ while true; do
     # nvidia-smi is a bit slow, so simulate a pause here
     sleep 5
   fi
+  sleep 30
 
   #SYSTEM-WIDE
   MEM_USAGE=$(free -t | awk 'FNR == 2 {print ($3/$2)*100}')
@@ -160,7 +161,6 @@ while true; do
   # if cactus process is dead, exit the script
   ps -p $cactus_pid > /dev/null || break
 
-  sleep 0.5
 done
 
 echo "$(basename $0) finalised"
