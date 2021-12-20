@@ -46,9 +46,8 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
     ) as process:
 
         output, stderr = process.communicate()
-        print("out: {}".format(output))
-        print("err: {}".format(stderr))
         process.wait()
+
         if process.returncode != 0:
             out = "stdout={}".format(output)
             out += ", stderr={}".format(stderr)
@@ -89,7 +88,7 @@ def parse(species, server_group, regex_search=''):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tree", required=True, type=str, help="Tree")
-    parser.add_argument("--server_group", default="", required=False, type=str, help="Server group to search")
+    parser.add_argument("--server_group", default="genebuild", required=False, type=str, help="Server group to search")
     parser.add_argument("--regex_search", default="", required=False, type=str, help="Regex filter to add in the search")
     parser.add_argument(
         "--output", required=False, default=None, type=str, help="Output folder to save the results in YAML format"
