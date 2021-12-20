@@ -55,32 +55,30 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False):
                 "Command {} exited {}: {}".format(call, process.returncode, out)
             )
 
-        print("Successfully ran: {}".format(" ".join(call)))
-
-        return output.strip()
-    return None
+    return output.strip()
 
 
 
 
-def find_server(specie, server_group, regex):
+def find_server(specie, server_group, regex_search):
     dbc_search_call = [
         "dbc_search",
         "-g {0}".format(server_group),
-        "{0}{1}".format(specie, regex)
+        "{0}{1}".format(specie, regex_search)
     ]
     return subprocess_call(dbc_search_call, shell=True)
 
 
-def parse(species, server_group, regex=''):
+def parse(species, server_group, regex_search=''):
     
     data = {}
 
     for specie in species:
-        result = find_server(specie, server_group, regex)
+        result = find_server(specie, server_group, regex_search)
         
         if result:
             server, db_name = list(filter(None,result.splitlines()))[0].split()
+            print("server: {}, db_name: {}", server, db_name)
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
@@ -90,8 +88,8 @@ def parse(species, server_group, regex=''):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tree", required=True, type=str, help="Tree")
-    parser.add_argument("--group", required=False, type=str, help="Server group to search")
-    parser.add_argument("--regex", required=False, type=str, help="Regex filter to add in the search")
+    parser.add_argument("--server_group", default="", required=False, type=str, help="Server group to search")
+    parser.add_argument("--regex_search", default="", required=False, type=str, help="Regex filter to add in the search")
     parser.add_argument(
         "--output", required=False, default=None, type=str, help="Output folder to save the results in YAML format"
     )
@@ -114,4 +112,4 @@ if __name__ == "__main__":
             sys.exit(1)
         
 
-        parse(species, "all", "%%core")
+        parse(species, args.server_group, args.regex_search)
