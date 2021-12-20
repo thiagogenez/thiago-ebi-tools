@@ -16,7 +16,7 @@ except ModuleNotFoundError as err:
 
 
 
-def subprocess_call(command, work_dir=None, shell=False, ibsub=False):
+def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=subprocess.PIPE, universal_newlines=True):
     """Subprocess function to spin  the given command line`
 
     Args:
@@ -41,8 +41,8 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False):
         shell=shell,
         encoding="ascii",
         cwd=work_dir,
-        stdout=subprocess.PIPE,
-        universal_newlines=True,
+        stdout=stdout,
+        universal_newlines=universal_newlines,
     ) as process:
 
         output, stderr = process.communicate()
@@ -78,7 +78,7 @@ def parse(species, server_group, regex_search=''):
         
         if result:
             server, db_name = list(filter(None,result.splitlines()))[0].split()
-            print("server: {}, db_name: {}", server, db_name)
+            print("server: {}, db_name: {}".format(server, db_name))
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
