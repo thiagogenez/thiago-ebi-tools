@@ -34,7 +34,8 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
         command = ["ibsub", "-d"] + command
 
     call = command
-    print("Running: {}".format(" ".join(call)))
+    print("Running: {}\n".format(" ".join(call)))
+
     with subprocess.Popen(
         call,
         shell=shell,
@@ -71,22 +72,37 @@ def find_server(specie, server_group, regex_search):
     
     return subprocess_call(dbc_search_call, shell=False)
 
+def prepare_yaml(data):
+    list = []
+    for server in data.keys():
+        input = {}
+        input['host'] = server
+        input['port'] = 9999
+        input['user'] = 'ensro'
+        input['core_db'] = data[server]
+
+        list.append(input)
+    
+    return list
+
 
 def parse(species, server_group, regex_search=''):
     
     data = {}
+    not_found = []
 
     for specie in species:
         result = find_server(specie, server_group, regex_search)
-        
         if result:
             server, db_name = sorted(list(filter(None,result.splitlines())))[-1].split()
             print("server: {}, db_name: {}".format(server, db_name))
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
+        else:
+            not_found.append(species)
     
-    print(data)
+    return data, not_found
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -103,7 +119,6 @@ if __name__ == "__main__":
         # FIXME: this piece of code assumes the tree is correct!
         species = sorted([i.split(':')[0].replace('(','').lower() for i in  f.read().strip().split(',')])
 
-        print(species)
         args.output = os.path.dirname(os.path.realpath(f.name)) if args.output is None else os.path.abspath(args.output)
     
         if not os.path.isdir(args.output):
@@ -115,4 +130,10 @@ if __name__ == "__main__":
             sys.exit(1)
         
 
-        parse(species, args.server_group, args.regex_search)
+        found, not_found = parse(species, args.server_group, args.regex_search)
+        print("{} found + {} not found = ".format(len(found), len(not_found), len(found) + len(not_found)))
+
+        list = prepare_yaml(found)
+
+        with open('result.yml', 'w') as yaml_file:
+            yaml.dump(list, yaml_file, default_flow_style=False)
