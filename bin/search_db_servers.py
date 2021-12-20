@@ -14,7 +14,12 @@ except ModuleNotFoundError as err:
     print(err)
     print('Please, run "pip install PyYAML" to install PyYAML module')
 
-
+PORT_NUMBER = {
+    "mysql-ens-vertannot-staging": 4573,
+    "mysql-ens-sta-5" : 4684, 
+    "mysql-ens-genebuild-prod-4": 4530,
+    "mysql-ens-genebuild-prod-6": 4532,
+}
 
 def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=subprocess.PIPE, universal_newlines=True):
     """Subprocess function to spin  the given command line`
@@ -77,7 +82,7 @@ def prepare_yaml(data):
     for server in data.keys():
         input = {}
         input['host'] = server
-        input['port'] = 9999
+        input['port'] = PORT_NUMBER[server] if server in PORT_NUMBER else 9999
         input['user'] = 'ensro'
         input['core_db'] = data[server]
 
@@ -131,9 +136,13 @@ if __name__ == "__main__":
         
 
         found, not_found = parse(species, args.server_group, args.regex_search)
+
         print("{} found + {} not found = ".format(len(found), len(not_found), len(found) + len(not_found)))
 
         list = prepare_yaml(found)
 
-        with open('result.yml', 'w') as yaml_file:
-            yaml.dump(list, yaml_file, default_flow_style=False)
+        with open('{}.found.yaml'.format(args.tree), 'w') as yaml_file:
+            yaml.dump(list, yaml_file)
+
+        with open('{}.not-found.yaml'.format(args.tree), 'w') as yaml_file:
+            yaml.dump(list, yaml_file)
