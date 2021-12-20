@@ -35,11 +35,9 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
 
     call = command
     print("Running: {}".format(" ".join(call)))
-
     with subprocess.Popen(
         call,
         shell=shell,
-        encoding="ascii",
         cwd=work_dir,
         stdout=stdout,
         universal_newlines=universal_newlines,
@@ -47,7 +45,6 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
 
         output, stderr = process.communicate()
         process.wait()
-
         if process.returncode != 0:
             out = "stdout={}".format(output)
             out += ", stderr={}".format(stderr)
@@ -63,10 +60,16 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
 def find_server(specie, server_group, regex_search):
     dbc_search_call = [
         "dbc_search",
-        "-g {0}".format(server_group),
-        "{0}{1}".format(specie, regex_search)
     ]
-    return subprocess_call(dbc_search_call, shell=True)
+
+    if server_group:
+        dbc_search_call.append("-g")
+        dbc_search_call.append(server_group)
+    
+    if regex_search:
+        dbc_search_call.append("{0}{1}".format(specie, regex_search))
+    
+    return subprocess_call(dbc_search_call, shell=False)
 
 
 def parse(species, server_group, regex_search=''):
@@ -77,7 +80,7 @@ def parse(species, server_group, regex_search=''):
         result = find_server(specie, server_group, regex_search)
         
         if result:
-            server, db_name = list(filter(None,result.splitlines()))[0].split()
+            server, db_name = sorted(list(filter(None,result.splitlines())))[-1].split()
             print("server: {}, db_name: {}".format(server, db_name))
             if server not in data:
                 data[server] = []
