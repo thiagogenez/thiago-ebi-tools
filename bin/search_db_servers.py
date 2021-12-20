@@ -39,7 +39,7 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
         command = ["ibsub", "-d"] + command
 
     call = command
-    print("Running: {}\n".format(" ".join(call)))
+    print("Running: {}".format(" ".join(call)))
 
     with subprocess.Popen(
         call,
@@ -100,12 +100,12 @@ def parse(species, server_group, regex_search=''):
         result = find_server(specie, server_group, regex_search)
         if result:
             server, db_name = sorted(list(filter(None,result.splitlines())))[-1].split()
-            print("server: {}, db_name: {}".format(server, db_name))
+            print("server: {}, db_name: {}\n".format(server, db_name))
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
         else:
-            not_found.append(species)
+            not_found.append(specie)
     
     return data, not_found
 
@@ -136,11 +136,16 @@ if __name__ == "__main__":
         
 
         found, not_found = parse(species, args.server_group, args.regex_search)
+        
+        # store non found species
+        with open('{}.not-found.yaml'.format(args.tree), 'w') as yaml_file:
+            yaml.dump(not_found, yaml_file)
 
+        # prepare yaml for species found
         list = prepare_yaml(found)
 
+        # dump the list following the script to download the fasta files
+        # "dump_genome_from_core.py"
         with open('{}.found.yaml'.format(args.tree), 'w') as yaml_file:
             yaml.dump(list, yaml_file)
 
-        with open('{}.not-found.yaml'.format(args.tree), 'w') as yaml_file:
-            yaml.dump(not_found, yaml_file)
