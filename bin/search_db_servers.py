@@ -89,7 +89,7 @@ def parse(species, server_group, regex=''):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", required=True, type=str, help="List of species")
+    parser.add_argument("--tree", required=True, type=str, help="Tree")
     parser.add_argument("--group", required=False, type=str, help="Server group to search")
     parser.add_argument("--regex", required=False, type=str, help="Regex filter to add in the search")
     parser.add_argument(
@@ -97,10 +97,12 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    with open(args.file, mode="r", encoding="utf-8") as f:
-        species = f.read().split()
+    with open(args.tree, mode="r", encoding="utf-8") as f:
+        # get list of species from the tree
+        # FIXME: this piece of code assumes the tree is correct!
+        species = sorted([i.split(':')[0].replace('(','').lower() for i in  f.read().strip().split(',')])
 
-        
+        print(species)
         args.output = os.path.dirname(os.path.realpath(f.name)) if args.output is None else os.path.abspath(args.output)
     
         if not os.path.isdir(args.output):
