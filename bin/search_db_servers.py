@@ -137,8 +137,6 @@ if __name__ == "__main__":
 
         found, not_found = parse(species, args.server_group, args.regex_search)
 
-        print("{} found + {} not found = ".format(len(found), len(not_found), len(found) + len(not_found)))
-
         list = prepare_yaml(found)
 
         with open('{}.found.yaml'.format(args.tree), 'w') as yaml_file:
