@@ -46,7 +46,8 @@ def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=sub
     ) as process:
 
         output, stderr = process.communicate()
-
+        print("out: {}".format(output))
+        print("err: {}".format(stderr))
         process.wait()
         if process.returncode != 0:
             out = "stdout={}".format(output)
