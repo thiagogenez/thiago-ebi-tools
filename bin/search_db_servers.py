@@ -143,4 +143,4 @@ if __name__ == "__main__":
             yaml.dump(list, yaml_file)
 
         with open('{}.not-found.yaml'.format(args.tree), 'w') as yaml_file:
-            yaml.dump(list, yaml_file)
+            yaml.dump(not_found, yaml_file)
