@@ -99,8 +99,25 @@ def parse(species, server_group, regex_search=''):
     for specie in species:
         result = find_server(specie, server_group, regex_search)
         if result:
-            server, db_name = sorted(list(filter(None,result.splitlines())))[-1].split()
+            # FIXME: too hacky and harded-code for the second split using _core_
+            # 
+            # Out[10]: result
+            # ['mysql-ens-genebuild-prod-6 kbillis_trachurus_trachurus_gca905171665v1_core_105',
+            # 'mysql-ens-genebuild-prod-3 kbillis_trachurus_trachurus_gca905171665v1_core_105',
+            # 'mysql-ens-sta-5 trachurus_trachurus_gca905171665v1_core_104_1',
+            # 'mysql-ens-genebuild-prod-1 trachurus_trachurus_gca905171665v1_core_103',
+            # 'mysql-ens-genebuild-prod-1 trachurus_trachurus_gca905171665v1_core_103_1']
+
+            # In [13]: sorted(result, key = lambda x: x.split()[1].split('_core_')[1])
+            # Out[13]:
+            # ['mysql-ens-genebuild-prod-1 trachurus_trachurus_gca905171665v1_core_103',
+            # 'mysql-ens-genebuild-prod-1 trachurus_trachurus_gca905171665v1_core_103_1',
+            # 'mysql-ens-sta-5 trachurus_trachurus_gca905171665v1_core_104_1',
+            # 'mysql-ens-genebuild-prod-6 kbillis_trachurus_trachurus_gca905171665v1_core_105',
+            # 'mysql-ens-genebuild-prod-3 kbillis_trachurus_trachurus_gca905171665v1_core_105']
+            server, db_name = sorted(list(filter(None,result.splitlines())), key = lambda x: x.split()[1].split('_core_')[1])[-1].split()
             print("server: {}, db_name: {}\n".format(server, db_name))
+            
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
@@ -113,7 +130,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tree", required=True, type=str, help="Tree")
     parser.add_argument("--server_group", default="genebuild", required=False, type=str, help="Server group to search")
-    parser.add_argument("--regex_search", default="", required=False, type=str, help="Regex filter to add in the search")
+    parser.add_argument("--regex_search", default="_core_", required=False, type=str, help="Regex filter to add in the search")
     parser.add_argument(
         "--output", required=False, default=None, type=str, help="Output folder to save the results in YAML format"
     )
