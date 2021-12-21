@@ -56,6 +56,9 @@ done
 
 #UPDATE PATH
 export PATH=${LOCAL_SCRIPTS}:$PATH
+
+# mount /data
+[ -d /data ] && mount /data
  
 # if this is a GPU-enable node, forcing the bash to stop until GPUs are loaded
 if [[ -d /usr/local/cuda/ ]]; then
