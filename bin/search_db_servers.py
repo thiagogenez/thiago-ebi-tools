@@ -176,6 +176,8 @@ if __name__ == "__main__":
 
         # dump the list following the script to download the fasta files
         # "dump_genome_from_core.py"
+        for key in found.keys():
+            found[key].sort()
         with open('{}.found.yaml'.format(args.tree), 'w') as yaml_file:
             yaml.dump(list, yaml_file)
 
