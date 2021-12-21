@@ -19,6 +19,10 @@ PORT_NUMBER = {
     "mysql-ens-sta-5" : 4684, 
     "mysql-ens-genebuild-prod-4": 4530,
     "mysql-ens-genebuild-prod-6": 4532,
+    "mysql-ens-sta-1": 4519,
+    "mysql-ens-genebuild-prod-3": 4529,
+    "mysql-ens-general-prod-1": 4525,
+    "mysql-ens-compara-prod-10": 4648
 }
 
 def subprocess_call(command, work_dir=None, shell=False, ibsub=False, stdout=subprocess.PIPE, universal_newlines=True):
@@ -117,7 +121,7 @@ def parse(species, server_group, regex_search=''):
             # 'mysql-ens-genebuild-prod-3 kbillis_trachurus_trachurus_gca905171665v1_core_105']
             server, db_name = sorted(list(filter(None,result.splitlines())), key = lambda x: x.split()[1].split('_core_')[1])[-1].split()
             print("server: {}, db_name: {}\n".format(server, db_name))
-            
+
             if server not in data:
                 data[server] = []
             data[server].append(db_name)
