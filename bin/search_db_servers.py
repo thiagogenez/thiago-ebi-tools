@@ -104,9 +104,13 @@ def parse(species, server_group, regex_search=''):
         result = find_server(specie, server_group, regex_search)
         if result:
             # FIXME: give priority to 'ens-sta' servers
-            ens_sta = list(filter(lambda k: 'ens-sta' in k, result))
+            ens_sta = list(filter(lambda k: 'mysql-ens-sta' in k, result))
             if ens_sta:
+                print("vvvv")
+                print("BEFORE: {}".format(result))
                 result = ens_sta
+                print("AFTER: {}".format(result))
+                print("^^^^")
 
             # FIXME: too hacky and harded-code for the second split using _core_
             # 
