@@ -103,6 +103,11 @@ def parse(species, server_group, regex_search=''):
     for specie in species:
         result = find_server(specie, server_group, regex_search)
         if result:
+            # FIXME: give priority to 'ens-sta' servers
+            ens_sta = list(filter(lambda k: 'ens-sta' in k, result))
+            if ens_sta:
+                result = ens_sta
+
             # FIXME: too hacky and harded-code for the second split using _core_
             # 
             # Out[10]: result
@@ -119,6 +124,7 @@ def parse(species, server_group, regex_search=''):
             # 'mysql-ens-sta-5 trachurus_trachurus_gca905171665v1_core_104_1',
             # 'mysql-ens-genebuild-prod-6 kbillis_trachurus_trachurus_gca905171665v1_core_105',
             # 'mysql-ens-genebuild-prod-3 kbillis_trachurus_trachurus_gca905171665v1_core_105']
+
             server, db_name = sorted(list(filter(None,result.splitlines())), key = lambda x: x.split()[1].split('_core_')[1])[-1].split()
             print("server: {}, db_name: {}\n".format(server, db_name))
 
