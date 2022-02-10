@@ -17,50 +17,52 @@ except ModuleNotFoundError as error:
     sys.exit(1)
 
 
-def assemblies_parser(dest, ext):
+def assemblies_parser(directories, ext):
     """A function to parse the meta information of FASTA files
 
     Args:
-        dest: the location where the FASTA files are localised
+        directories: list of paths where the FASTA files are localised
         ext: extention of the files expected to be found in `dest`
 
     Returns:
         A dictionary containing the path, filename, and bool flag for each file.ext in `deset`
 
     """
-    dest = os.path.abspath(dest)
-
-    # sanity check
-    ext = re.sub("\\W+|_", "", ext).lower()
-    ext = "." + ext
-
-    try:
-        filenames = os.listdir(dest)
-    except FileNotFoundError as err:
-        raise err
-
+    # dict to store the fasta files
     content = {}
 
-    for filename in filenames:
-        if filename.endswith(ext):
+    # ext string sanity check
+    ext = re.sub("\\W+|_", "", ext).lower()
+    ext = "." + ext
+    print("DIRS: {}".format(directories))
+    for dest in directories:
 
-            key = re.sub("\\W+|_", "", filename).lower()
+        # get absolute path
+        dest = os.path.abspath(dest)
 
-            # sanity check
-            assert key not in content
+        try:
+            for filename in os.listdir(dest):
+                if filename.endswith(ext):
 
-            content[key] = {
-                "path": "{}/{}".format(dest, filename),
-                "name": filename.rsplit(ext, 1)[0],
-                "used": False,
-            }
-        else:
-            print(
-                "filename {} does not end with {}, thus it has been ignored".format(
-                    filename, ext
-                )
-            )
+                    key = re.sub("\\W+|_", "", filename).lower()
 
+                    # sanity check
+                    assert key not in content
+
+                    content[key] = {
+                        "path": "{}/{}".format(dest, filename),
+                        "name": filename.rsplit(ext, 1)[0],
+                        "used": False,
+                    }
+                else:
+                    print(
+                        "file {} does not end with {}, thus it will been ignored".format(
+                            filename, ext
+                        )
+                    )
+        except FileNotFoundError as err:
+            raise err
+    print("content: {}".format(content))
     return content
 
 
@@ -84,7 +86,7 @@ def tree_parser(filename, tree_format, output):
             output = os.path.abspath(output)
 
         name, ext = os.path.splitext(os.path.basename(f.name))
-        output += "/{}.processed{}".format(name, ext)
+        output += "/{}-{}.processed{}".format(name, datetime.now().strftime("%Y%m%d"), ext)
         tree = Phylo.read(f, format=tree_format)
 
     return {"tree": tree, "path": output}
@@ -207,8 +209,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--assemblies_dir",
-        type=str,
+        "--assemblies_dirs",
+        nargs="+",
         required=True,
         help="Directory where FASTA files are localised",
     )
@@ -243,11 +245,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # parse the fasta files
-    assemblies_data = assemblies_parser(dest=args.assemblies_dir, ext=args.extension)
+    assemblies_data = assemblies_parser(args.assemblies_dirs, args.extension)
 
     # parse the tree and create the cactus input file
     tree_data = tree_parser(
-        filename=args.tree, tree_format=args.format, output=args.output_dir
+        args.tree, args.format, args.output_dir
     )
 
     # sanity check
@@ -258,10 +260,10 @@ if __name__ == "__main__":
 
     # add a header as comments to the cactus input file
     add_header(
-        cactus_prepare_filename=tree_data["path"],
-        tree_filename=args.tree,
-        argv=sys.argv,
-        qtd_files=len(assemblies_data),
-        qtd_terminals=len(tree_data["tree"].get_terminals()),
-        unused_filenames=unused_filenames,
+        tree_data["path"],
+        args.tree,
+        sys.argv,
+        len(assemblies_data),
+        len(tree_data["tree"].get_terminals()),
+        unused_filenames,
     )

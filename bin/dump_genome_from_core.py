@@ -148,7 +148,7 @@ def parse_yaml(file, dest):
                 # fix the name
                 gca_number = gca_number.replace(".", "v").replace('_','').lower()
                 specie_name = "{}_{}".format(specie_name, gca_number)
-
+ 
             if specie_name is not None:
                 download_file(
                     host=host,
