@@ -1,9 +1,8 @@
 #!/bin/bash
 
 function print_help() {
-  echo "$(
-    cat <<EOF
-Usage:  bash $(basename $0) [option]
+  cat <<EOF
+Usage:  bash $(basename "$0") [option]
 Options:
   -o | --output: output CVS-format filename
   -t | --TARGET: command-line to be listened; e.g., " -t cactus-preprocess\|cactus-blast\|cactus-align\|run_segalign"
@@ -11,7 +10,6 @@ Options:
   -v | --verbose: verbosely mode
   -h | --help: to print this message
 EOF
-  )"
 }
 
 function get_elapsed_time() {
@@ -62,8 +60,8 @@ function get_target_process_pid() {
 
 function get_leaves_children() {
 
-  # Print all descendant pids of process pid $1
-  # adapted from https://unix.stackexchange.com/a/339071
+  # Print all descendant that are leaves pids of process pid $1
+  # Adapted from https://unix.stackexchange.com/a/339071
 
   process=${1:-1}
   local leaves=()
@@ -83,7 +81,14 @@ function get_leaves_children() {
 }
 
 function get_comms() {
-  # the given PID represented by $2 MUST be a child process of the process represented by the PID given by $1
+  # Print the commands path from $2 to $1
+  # The given PID represented by $2 MUST be a child process of the process represented by the PID given by $1
+
+  # sanity-check
+  if [ "$#" -ne 2 ]; then
+    return 1
+  fi
+
   target_pid=$1
   current_pid=$2
 
@@ -125,57 +130,98 @@ function grab_stats() {
   local root_pid=$1
   local gpu=$2
   local cvs_file=$3
+  local start_time=$4
 
   #preamble: header of the CVS-format file
-  echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE_TOP,CPU_USAGE_PROC,MEM_USAGE,GPU_USAGE,GPU_MEM_USAGE" >>$cvs_file
+  echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE_TOP,CPU_USAGE_PROC,MEM_USAGE,GPU_USAGE,GPU_MEM_USAGE," >>"$cvs_file"
 
   while true; do
+
+    #######
+    ### 1) GPU parser is slower, so try it first than grabbing CPU and Memory usage
+    #######
 
     # gpu resource usage is 0.0 by default
     gpu_usage=0.0
     gpu_mem_usage=0.0
 
-    # 1) GPU parser is slower, so try it first than grabbing CPU and Memory usage
     if [[ "$gpu" == "YES" ]]; then
 
       #nvidia filename
-      nvidia_log_tmp_file="$(basedir $cvs_file)/nvidia-$(hostname).log"
+      nvidia_log_tmp_file="$(basedir "$cvs_file")/nvidia-$(hostname).log"
 
       # remove previous rubbish if exists
-      [ -f $nvidia_log_tmp_file ] && rm $nvidia_log_tmp_file
-      nvidia-smi >$nvidia_log_tmp_file
+      [ -f "$nvidia_log_tmp_file" ] && rm "$nvidia_log_tmp_file"
+      nvidia-smi >"$nvidia_log_tmp_file"
 
       # give a pause to wait all the content be flushed to the file
       sleep 2
 
       # parse the data
       gpu_quantity=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-      gpu_usage=$(grep "%" $nvidia_log_tmp_file | awk '{print $13}' | cut -d'%' -f1 | awk '{ sum += $1 } END {  if (NR > 0) print(sum / NR) }')
-      gpu_mem_usage=$(grep "MiB" $nvidia_log_tmp_file | head -$gpu_quantity | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
+      gpu_usage=$(grep "%" "$nvidia_log_tmp_file" | awk '{print $13}' | cut -d'%' -f1 | awk '{ sum += $1 } END {  if (NR > 0) print(sum / NR) }')
+      gpu_mem_usage=$(grep "MiB" "$nvidia_log_tmp_file" | head -"$gpu_quantity" | sed 's/MiB//g' | awk '{printf "%f\n", ($9/$11)*100 }' | awk '{ total += $1 } END {  if (NR > 0) print total/NR }')
 
       # delete the file
-      rm $nvidia_log_tmp_file
+      rm "$nvidia_log_tmp_file"
     fi
 
-    # 2) Get CPU and memory SYSTEM-WIDE usage
+    #######
+    ### 2) Get CPU and memory SYSTEM-WIDE usage
+    #######
     mem_ram_usage=$(free -t | awk 'FNR == 2 {print ($3/$2)*100}')
-    cpu_usage_top=$(top -b -n 2 -d 0.5 | fgrep "Cpu(s)" | tail -1 | gawk '{print $2+$4+$6}')
+    cpu_usage_top=$(top -b -n 2 -d 0.5 | grep -F "Cpu(s)" | tail -1 | gawk '{print $2+$4+$6}')
     cpu_usage_proc=$(cat <(grep 'cpu ' /proc/stat) <(sleep 0.5 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
 
-    # 3) get the commands (children process of the $root_pid) that are using CPU > 10%
-    
+    #######
+    ### 3) get the commands (children process of the $root_pid) that are using CPU > 10%
+    #######
+
     # create a tmp file to have a screenshot
     temp_file=$(mktemp)
 
-    #xargs -n 1 -I{} ps -o pid,pcpu,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | awk '{A[$3]+=$2;I[$3]++}END{for(i in A) if (A[i]) printf "[%s %.2f%% %i]", i,A[i]/I[i],I[i]}'
+    # get PID,PCPU,COMM for each running child process of $root_pid that is a leave
+    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k3,3 >"$temp_file"
+
+    # summarise children processes in the following format [name avg_cpu_%_usage quantity_running avg_cpu_%_machine]
+    unset children_individual_cpu_usage
+    children_individual_cpu_usage=$(awk -v nproc="$(nproc)" '{A[$3]+=$2;I[$3]++}END{for(i in A) if (A[i]) printf "[%s %.2f%% %i %.2f%%],", i,A[i]/I[i],I[i],(I[i]/nproc)*(A[i]/I[i])}' "$temp_file")
+    # remove the last char that is a comma ","
+    children_individual_cpu_usage="${children_individual_cpu_usage:0:-1}"
+
+    # for each children, get the process path up to its ascendent (which PID is equal to $root_pid)
+    unset children_individual_pid_path
+    unset p_newest
+    while read -r line; do
+      p_newest=$(pgrep --newest "$line")
+      children_individual_pid_path+=("$(get_comms "$root_pid" "$p_newest")")
+    done < <(awk '{ a[$3]++ } END { for (b in a) { print b } }' "$temp_file")
+
+    # organising the data: [COMMAND_1>COMMAND_2>COMMAND_3>],
+    children_individual_pid_path=("$(printf '[%s],' "${children_individual_pid_path[@]}" | tr ' ' '>')")
+    # remove the last char that is a comma ","
+    children_individual_pid_path=("${children_individual_pid_path:0:-1}")
+
     # delete the tmp file
-    rm ${temp_file}
+    rm "$temp_file"
 
-    # store data
-    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage" >>$cvs_file
+    #######
+    ### 4) Get the elepsed time
+    #######
+    elapsed=$(get_elapsed_time "$start_time")
+    format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
 
-    # watch $TARGET_PID to check it out if it is dead to break the loop
-    ps -p $TARGET_PID >/dev/null || break
+    #######
+    ### 5) Store data
+    #######
+    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,$children_individual_cpu_usage,${children_individual_pid_path[*]}" >>"$cvs_file"
+
+    #######
+    ### 6) WAY OUT?
+    #######
+
+    # watch $TARGET_PID to check it out if it is dead to break/exit the loop
+    ps -p "$root_pid" >/dev/null || break
 
     # otherwise, $TARGET_PID still alive and grabs the resource usage for the next round of 20 seconds of waiting
     sleep 20
@@ -199,7 +245,7 @@ function main() {
     case $key in
 
     -o | --output)
-      OUTPUT_CVS_FILE="$2"
+      output_cvs_file="$2"
       shift # past argument
       shift # past value
       ;;
@@ -208,11 +254,11 @@ function main() {
       exit 0
       ;;
     -g | --gpu)
-      GPU=YES
+      has_gpu=YES
       shift # past argument
       ;;
     -v | --verbose)
-      VERBOSE=YES
+      verbose_mode=YES
       shift # past argument
       ;;
     -t | --target)
@@ -229,41 +275,40 @@ function main() {
   set -- "${UNKNOWN[@]}" # restore UNKNOWN parameters
 
   if [[ "${#UNKNOWN[@]}" -gt 0 ]]; then
-    echo "Unknown arguments      = ${UNKNOWN[@]}"
-    echo "Run \"bash $(basename $0) --help\" for more option details"
+    echo "Unknown arguments      = ${UNKNOWN[*]}"
+    echo "Run \"bash $(basename "$0") --help\" for more option details"
     exit 1
   fi
 
-  if [[ "$OUTPUT_CVS_FILE" == "" ]]; then
+  if [[ "$output_cvs_file" == "" ]]; then
     echo "argument \"-o\" or \"--output\" is missing"
     exit 1
   fi
 
-  if [[ "$VERBOSE" == "YES" ]]; then
+  if [[ "$verbose_mode" == "YES" ]]; then
     echo "Given arguments:"
-    echo "  -o  = ${OUTPUT_CVS_FILE}"
-    [[ "$GPU" == "YES" ]] && echo "  -g  = ${GPU}"
-    echo "  -v  = ${VERBOSE}"
+    echo "  -o  = ${output_cvs_file}"
+    [[ "$has_gpu" == "YES" ]] && echo "  -g  = ${has_gpu}"
+    echo "  -v  = ${verbose_mode}"
     echo "  -l  = ${TARGET}"
   fi
 
   # get PID of the target process
-  TARGET_PID=$(get_target_process_pid $TARGET)
+  target_pid=$(get_target_process_pid "$TARGET")
 
-  if [[ "$VERBOSE" == "YES" ]]; then
-    echo "PID=$TARGET_PID"
-    echo "NAME=$(ps -p $TARGET_PID -o comm=)"
+  if [[ "$verbose_mode" == "YES" ]]; then
+    echo "PID=$target_pid"
+    echo "NAME=$(ps -p "$target_pid" -o comm=)"
   fi
 
   # reset the clock
   start_time=$SECONDS
 
   # create resource profile
-  grab_stats "$TARGET_PID" "$GPU" "$OUTPUT_CVS_FILE"
+  grab_stats "$target_pid" "$has_gpu" "$output_cvs_file" "$start_time"
 
-  [[ "$VERBOSE" == "YES" ]] && echo "$(basename $0) finalised"
+  [[ "$verbose_mode" == "YES" ]] && echo "$(basename "$0") finalised"
 }
-
 # let's rock!!!
 main "$@"
 
