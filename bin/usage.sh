@@ -181,15 +181,33 @@ function grab_stats() {
     temp_file=$(mktemp)
 
     # get PID,PCPU,COMM for each running child process of $root_pid that is a leave
-    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k3,3 >"$temp_file"
+    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k4,4 >"$temp_file"
 
     # summarise children processes in the following format [name avg_cpu_%_usage quantity_running avg_cpu_%_machine]
     unset children_individual_cpu_usage
-    children_individual_cpu_usage=$(awk -v nproc="$(nproc)" '{A[$3]+=$2;I[$3]++}END{for(i in A) if (A[i]) printf "[%s %.2f%% %i %.2f%%],", i,A[i]/I[i],I[i],(I[i]/nproc)*(A[i]/I[i])}' "$temp_file")
+    children_individual_cpu_usage=$(awk -v nproc="$(nproc)" \
+      '{ \
+        CPU[$4]+=$2; \
+        MEM[$4]+=$3; \
+        PS[$4]++; \
+      } \
+      END { \
+        for(i in CPU) \
+          if (CPU[i]) \
+            printf "%s %i %.2f%% %.2f%% %.2f%%,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
+      }' \
+      "$temp_file")
     # remove the last char that is a comma ","
     children_individual_cpu_usage="${children_individual_cpu_usage:0:-1}"
 
-    # for each children, get the process path up to its ascendent (which PID is equal to $root_pid)
+    # parse the resource usage for each command separated
+    unset values
+    IFS=, read -ra values <<< "$children_individual_cpu_usage"
+    for v in "${values[@]}"; do
+      echo "$v"
+    done
+
+    # for each children process, get the path of commands between itself and its ascendent that the PID $root_pid
     unset children_individual_pid_path
     unset p_newest
     while read -r line; do
