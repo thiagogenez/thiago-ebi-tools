@@ -98,9 +98,9 @@ function get_comms() {
   while true; do
 
     # <defunct>: some child process may have died already
-    IFS=" " read -r -a array <<<"$(ps -o comm,ppid -p "$current_pid" --no-headers | sed 's/<defunct>//g')"
+    IFS=" " read -r -a array <<<"$(ps -o comm,ppid,cmd -p "$current_pid" --no-headers | sed 's/<defunct>//g')"
 
-    # check the current command spiking the CPU usage
+    # check the current command that is consuming the CPU usage
     child_comm="${array[0]}"
 
     # if we achieve the topiest pid we want; therefore leave the loop
@@ -112,6 +112,11 @@ function get_comms() {
     if [[ "$current_pid" == "1" ]]; then
       echo >&2 "TARGET_PID=$target_pid is dead and it wasn't supposed to be happening! Exiting with code 1"
       exit 1
+    fi
+
+    # especial case when $child_comm == "python3"
+    if [[ "$child_comm" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
+      child_comm=$(awk -F '/' '{print $NF}' <<<"${array[3]}")
     fi
 
     # store the command to the array
@@ -174,7 +179,13 @@ function grab_stats() {
     cpu_usage_proc=$(cat <(grep 'cpu ' /proc/stat) <(sleep 0.5 && grep 'cpu ' /proc/stat) | awk -v RS="" '{print ($13-$2+$15-$4)*100/($13-$2+$15-$4+$16-$5)}')
 
     #######
-    ### 3) get the commands (children process of the $root_pid) that are using CPU > 10%
+    ### 3) Get the elepsed time
+    #######
+    elapsed=$(get_elapsed_time "$start_time")
+    format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
+
+    #######
+    ### 4) get the commands (children process of the $root_pid) that are using CPU > 10%
     #######
 
     # create a tmp file to have a screenshot
@@ -183,7 +194,7 @@ function grab_stats() {
     # get PID,PCPU,COMM for each running child process of $root_pid that is a leave
     xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k4,4 >"$temp_file"
 
-    # summarise children processes in the following format [name avg_cpu_%_usage quantity_running avg_cpu_%_machine]
+    # summarise children processes in the following format [PROCESS_NAME PROCESS_QUANTITY AVG_%_USAGE_ALLOCATED_CPU AVG_%_USAGE_MACHINE AVG_%_MEMORY_USAGE]
     unset children_individual_cpu_usage
     children_individual_cpu_usage=$(awk -v nproc="$(nproc)" \
       '{ \
@@ -194,17 +205,20 @@ function grab_stats() {
       END { \
         for(i in CPU) \
           if (CPU[i]) \
-            printf "%s %i %.2f%% %.2f%% %.2f%%,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
+            printf "%s %i %.2f%% %.2f% %.2f%,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
       }' \
       "$temp_file")
     # remove the last char that is a comma ","
     children_individual_cpu_usage="${children_individual_cpu_usage:0:-1}"
 
     # parse the resource usage for each command separated
-    unset values
-    IFS=, read -ra values <<< "$children_individual_cpu_usage"
-    for v in "${values[@]}"; do
-      echo "$v"
+    unset rows
+    IFS=, read -ra rows <<<"$children_individual_cpu_usage"
+    for row in "${rows[@]}"; do
+      unset values
+      read -ra values <<<"${row}"
+      outfile="$cvs_file"."${values[0]}"
+      echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
     # for each children process, get the path of commands between itself and its ascendent that the PID $root_pid
@@ -213,9 +227,9 @@ function grab_stats() {
     while read -r line; do
       p_newest=$(pgrep --newest "$line")
       children_individual_pid_path+=("$(get_comms "$root_pid" "$p_newest")")
-    done < <(awk '{ a[$3]++ } END { for (b in a) { print b } }' "$temp_file")
+    done < <(awk '{ PS[$4]++ } END { for (b in PS) { print b } }' "$temp_file")
 
-    # organising the data: [COMMAND_1>COMMAND_2>COMMAND_3>],
+    # organising the data as follows: [COMMAND_1>COMMAND_2>COMMAND_3>],
     children_individual_pid_path=("$(printf '[%s],' "${children_individual_pid_path[@]}" | tr ' ' '>')")
     # remove the last char that is a comma ","
     children_individual_pid_path=("${children_individual_pid_path:0:-1}")
@@ -224,24 +238,18 @@ function grab_stats() {
     rm "$temp_file"
 
     #######
-    ### 4) Get the elepsed time
-    #######
-    elapsed=$(get_elapsed_time "$start_time")
-    format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
-
-    #######
     ### 5) Store data
     #######
-    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,$children_individual_cpu_usage,${children_individual_pid_path[*]}" >>"$cvs_file"
+    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,${children_individual_pid_path[*]}" >>"$cvs_file"
 
     #######
     ### 6) WAY OUT?
     #######
 
-    # watch $TARGET_PID to check it out if it is dead to break/exit the loop
+    # YES -> watch $TARGET_PID to check it out if it is dead to break/exit the loop
     ps -p "$root_pid" >/dev/null || break
 
-    # otherwise, $TARGET_PID still alive and grabs the resource usage for the next round of 20 seconds of waiting
+    # NO -> otherwise, $TARGET_PID still alive and grabs the resource usage for the next round of 20 seconds of waiting
     sleep 20
 
   done
