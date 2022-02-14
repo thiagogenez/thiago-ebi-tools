@@ -103,11 +103,6 @@ function get_comms() {
     # check the current command that is consuming the CPU usage
     child_comm="${array[0]}"
 
-    # if we achieve the topiest pid we want; therefore leave the loop
-    if [[ "$current_pid" == "$target_pid" ]]; then
-      break
-    fi
-
     # sanity-check: This is not suppose to happen
     if [[ "$current_pid" == "1" ]]; then
       echo >&2 "TARGET_PID=$target_pid seems to be dead and it wasn't supposed to happening! Exiting with code 1"
@@ -121,8 +116,16 @@ function get_comms() {
 
     # store the command to the array
     comms+=("$child_comm")
+  
 
-    # otherwise, update the parent PID and keeping going up
+    # WAY OUY?
+    
+    # YES > if we achieve the topiest pid we want; therefore leave the loop
+    if [[ "$current_pid" == "$target_pid" ]]; then
+      break
+    fi
+
+    # NO -> otherwise, update the parent PID and keeping going up
     current_pid="${array[1]}"
 
   done
@@ -182,7 +185,8 @@ function grab_stats() {
     ### 3) Get the elepsed time
     #######
     elapsed=$(get_elapsed_time "$start_time")
-    format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
+    #format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
+    format_time=$(eval "echo $(date -ud "@$elapsed" +'$((%s/3600/24))d:%Hh:%Mm:%Ss')")
 
     #######
     ### 4) get the commands (children process of the $root_pid) that are using CPU > 10%
