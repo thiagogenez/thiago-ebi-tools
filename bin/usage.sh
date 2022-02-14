@@ -205,11 +205,11 @@ function grab_stats() {
       END { \
         for(i in CPU) \
           if (CPU[i]) \
-            printf "%s %i %.2f%% %.2f% %.2f%,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
+            printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
       }' \
       "$temp_file")
     # remove the last char that is a comma ","
-    children_individual_cpu_usage="${children_individual_cpu_usage:0:-1}"
+    children_individual_cpu_usage="${children_individual_cpu_usage%?}"
 
     # parse the resource usage for each command separated
     unset rows
@@ -232,7 +232,7 @@ function grab_stats() {
     # organising the data as follows: [COMMAND_1>COMMAND_2>COMMAND_3>],
     children_individual_pid_path=("$(printf '[%s],' "${children_individual_pid_path[@]}" | tr ' ' '>')")
     # remove the last char that is a comma ","
-    children_individual_pid_path=("${children_individual_pid_path:0:-1}")
+    children_individual_pid_path=("${children_individual_pid_path%?}")
 
     # delete the tmp file
     rm "$temp_file"
@@ -316,15 +316,15 @@ function main() {
     echo "  -o  = ${output_cvs_file}"
     [[ "$has_gpu" == "YES" ]] && echo "  -g  = ${has_gpu}"
     echo "  -v  = ${verbose_mode}"
-    echo "  -l  = ${TARGET}"
+    echo "  -t  = ${TARGET}"
   fi
 
   # get PID of the target process
   target_pid=$(get_target_process_pid "$TARGET")
 
   if [[ "$verbose_mode" == "YES" ]]; then
-    echo "PID=$target_pid"
-    echo "NAME=$(ps -p "$target_pid" -o comm=)"
+    echo "TARGET_PID=$target_pid"
+    echo "TARGET_PROCESS_NAME=$(ps -p "$target_pid" -o comm=)"
   fi
 
   # reset the clock
