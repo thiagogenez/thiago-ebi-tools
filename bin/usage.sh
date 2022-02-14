@@ -60,7 +60,7 @@ function get_target_process_pid() {
 
 function get_leaves_children() {
 
-  # Print all descendant that are leaves pids of process pid $1
+  # Print all descendant that are leaves pids of $1
   # Adapted from https://unix.stackexchange.com/a/339071
 
   process=${1:-1}
@@ -110,7 +110,7 @@ function get_comms() {
 
     # sanity-check: This is not suppose to happen
     if [[ "$current_pid" == "1" ]]; then
-      echo >&2 "TARGET_PID=$target_pid is dead and it wasn't supposed to be happening! Exiting with code 1"
+      echo >&2 "TARGET_PID=$target_pid seems to be dead and it wasn't supposed to happening! Exiting with code 1"
       exit 1
     fi
 
@@ -195,25 +195,25 @@ function grab_stats() {
     xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k4,4 >"$temp_file"
 
     # summarise children processes in the following format [PROCESS_NAME PROCESS_QUANTITY AVG_%_USAGE_ALLOCATED_CPU AVG_%_USAGE_MACHINE AVG_%_MEMORY_USAGE]
-    unset children_individual_cpu_usage
-    children_individual_cpu_usage=$(awk -v nproc="$(nproc)" \
+    unset individual_cpu_usage_per_process_type
+    individual_cpu_usage_per_process_type=$(awk -v nproc="$(nproc)" \
       '{ \
         CPU[$4]+=$2; \
         MEM[$4]+=$3; \
         PS[$4]++; \
       } \
       END { \
-        for(i in CPU) \
-          if (CPU[i]) \
+        for(i in PS) \
+          if (PS[i]) \
             printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
       }' \
       "$temp_file")
     # remove the last char that is a comma ","
-    children_individual_cpu_usage="${children_individual_cpu_usage%?}"
+    individual_cpu_usage_per_process_type="${individual_cpu_usage_per_process_type%?}"
 
     # parse the resource usage for each command separated
     unset rows
-    IFS=, read -ra rows <<<"$children_individual_cpu_usage"
+    IFS=, read -ra rows <<<"$individual_cpu_usage_per_process_type"
     for row in "${rows[@]}"; do
       unset values
       read -ra values <<<"${row}"
@@ -222,17 +222,17 @@ function grab_stats() {
     done
 
     # for each children process, get the path of commands between itself and its ascendent that the PID $root_pid
-    unset children_individual_pid_path
-    unset p_newest
+    unset child_path
+    unset newest_child
     while read -r line; do
-      p_newest=$(pgrep --newest "$line")
-      children_individual_pid_path+=("$(get_comms "$root_pid" "$p_newest")")
+      newest_child=$(pgrep --newest "$line")
+      child_path+=("$(get_comms "$root_pid" "$newest_child")")
     done < <(awk '{ PS[$4]++ } END { for (b in PS) { print b } }' "$temp_file")
 
     # organising the data as follows: [COMMAND_1>COMMAND_2>COMMAND_3>],
-    children_individual_pid_path=("$(printf '[%s],' "${children_individual_pid_path[@]}" | tr ' ' '>')")
+    child_path=("$(printf '[%s],' "${child_path[@]}" | tr ' ' '>')")
     # remove the last char that is a comma ","
-    children_individual_pid_path=("${children_individual_pid_path%?}")
+    child_path=("${child_path%?}")
 
     # delete the tmp file
     rm "$temp_file"
@@ -240,7 +240,7 @@ function grab_stats() {
     #######
     ### 5) Store data
     #######
-    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,${children_individual_pid_path[*]}" >>"$cvs_file"
+    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,${child_path[*]}" >>"$cvs_file"
 
     #######
     ### 6) WAY OUT?
