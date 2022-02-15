@@ -116,10 +116,9 @@ function get_comms() {
 
     # store the command to the array
     comms+=("$child_comm")
-  
 
     # WAY OUY?
-    
+
     # YES > if we achieve the topiest pid we want; therefore leave the loop
     if [[ "$current_pid" == "$target_pid" ]]; then
       break
@@ -133,6 +132,21 @@ function get_comms() {
   echo "${comms[@]}"
 }
 
+function join_data() {
+  local cvs_file=$1
+
+  files=($(ls "${cvs_file}"*))
+  for f in "${files[@]}"; do
+    {
+      # grab the header and print it untouched
+      IFS= read -ra header
+      echo "$header"
+      # now process the rest of the input
+      sort -t ',' -k 1b,1
+    } < orthofinder_jobID_52_t_32_4.usage > sorted
+  done
+}
+
 function grab_stats() {
 
   local root_pid=$1
@@ -141,7 +155,7 @@ function grab_stats() {
   local start_time=$4
 
   #preamble: header of the CVS-format file
-  echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE_TOP,CPU_USAGE_PROC,MEM_USAGE,GPU_USAGE,GPU_MEM_USAGE," >>"$cvs_file"
+  echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE_TOP,CPU_USAGE_PROC,MEM_USAGE,GPU_USAGE,GPU_MEM_USAGE,NOTES" >>"$cvs_file"
 
   while true; do
 
@@ -186,7 +200,7 @@ function grab_stats() {
     #######
     elapsed=$(get_elapsed_time "$start_time")
     #format_time=$(TZ=UTC0 printf '%(%H:%M:%S)T\n' "$elapsed")
-    format_time=$(eval "echo $(date -ud "@$elapsed" +'$((%s/3600/24))d:%Hh:%Mm:%Ss')")
+    format_time=$(bc <<<"$elapsed"/3600/24)$(date -ud "@$elapsed" +"d:%Hh:%Mm:%Ss")
 
     #######
     ### 4) get the commands (children process of the $root_pid) that are using CPU > 10%
@@ -222,6 +236,8 @@ function grab_stats() {
       unset values
       read -ra values <<<"${row}"
       outfile="$cvs_file"."${values[0]}"
+      # write the header
+      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE"
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
