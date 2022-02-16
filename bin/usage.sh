@@ -22,7 +22,8 @@ function get_target_process_pid() {
   target_proc_name=$1
 
   while true; do
-    target_pid=$(pgrep --oldest --full "$target_proc_name")
+    # set user ID to avoid "hijack"
+    target_pid=$(pgrep --oldest --full "$target_proc_name" --uid $(id -u))
 
     # if found it, job done
     if [[ "$target_pid" != "" ]]; then
@@ -296,7 +297,8 @@ function grab_stats() {
     unset child_path
     unset newest_child
     while read -r line; do
-      newest_child=$(pgrep --newest "$line")
+      # set user ID to avoid "hijack" 
+      newest_child=$(pgrep --newest "$line" --uid $(id -u))
       child_path+=("$(get_comms "$root_pid" "$newest_child")")
     done < <(awk '{ PS[$4]++ } END { for (b in PS) { print b } }' "$temp_file")
 
