@@ -110,6 +110,7 @@ function get_comms() {
     fi
 
     # especial case when $child_comm == "python3"
+    # extract the python filename
     if [[ "$child_comm" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
       child_comm=$(awk -F '/' '{print $NF}' <<<"${array[3]}")
     fi
@@ -237,21 +238,31 @@ function grab_stats() {
     temp_file=$(mktemp)
 
     # get PID,PCPU,COMM for each running child process of $root_pid that is a leave
-    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -F " " '{ if ( $2 >=5 ) print $0 }' | sort -k4,4 >"$temp_file"
+    cpu_threshold=0.0
+    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -v cpu_threshold="$cpu_threshold" -F " " \
+      ' \
+        { \
+          if ( $2 >= cpu_threshold ) \
+            print $0  \
+        } \
+      ' \
+        | sort -k4,4 >"$temp_file"
 
     # summarise children processes in the following format [PROCESS_NAME PROCESS_QUANTITY AVG_%_USAGE_ALLOCATED_CPU AVG_%_USAGE_MACHINE AVG_%_MEMORY_USAGE]
     unset individual_cpu_usage_per_process_type
     individual_cpu_usage_per_process_type=$(awk -v nproc="$(nproc)" \
-      '{ \
-        CPU[$4]+=$2; \
-        MEM[$4]+=$3; \
-        PS[$4]++; \
-      } \
-      END { \
-        for(i in PS) \
-          if (PS[i]) \
-            printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
-      }' \
+      '\
+        { \
+          CPU[$4]+=$2; \
+          MEM[$4]+=$3; \
+          PS[$4]++; \
+        } \
+        END { \
+          for(i in PS) \
+            if (PS[i]) \
+              printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
+        } \
+      ' \
       "$temp_file")
     # remove the last char that is a comma ","
     individual_cpu_usage_per_process_type="${individual_cpu_usage_per_process_type%?}"
@@ -264,7 +275,7 @@ function grab_stats() {
       read -ra values <<<"${row}"
       outfile="$cvs_file"."${values[0]}"
       # write the header
-      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE"
+      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE" > "$outfile"
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
