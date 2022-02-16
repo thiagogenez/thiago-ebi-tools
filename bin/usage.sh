@@ -93,30 +93,36 @@ function get_comms() {
   current_pid=$2
 
   # list of commands from the given PID=$1 until its parent process (which PID=$TARGET_PID)
-  local comms=()
+  comms=()
+
+  # in case $current_pid is already dead
+  start_time="$SECONDS"
+  timeout=2
 
   while true; do
 
     # <defunct>: some child process may have died already
-    IFS=" " read -r -a array <<<"$(ps -o comm,ppid,cmd -p "$current_pid" --no-headers | sed 's/<defunct>//g')"
+    IFS=" " read -r -a array <<<"$(ps -o comm,ppid,cmd -p "$current_pid" --no-headers  2>/dev/null  | sed 's/<defunct>//g' )"
 
     # check the current command that is consuming the CPU usage
     child_comm="${array[0]}"
+
+    # especial case when $child_comm == "python3"
+    # extract the python filename
+    if [[ "$child_comm" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
+      child_comm="python3/$(awk -F '/' '{print $NF}' <<<"${array[3]}")"
+    fi
+
+    # store the command to the array
+    if [[ "${#child_comm}" -gt "0" ]]; then
+      comms+=("$child_comm")
+    fi
 
     # sanity-check: This is not suppose to happen
     if [[ "$current_pid" == "1" ]]; then
       echo >&2 "TARGET_PID=$target_pid seems to be dead and it wasn't supposed to happening! Exiting with code 1"
       exit 1
     fi
-
-    # especial case when $child_comm == "python3"
-    # extract the python filename
-    if [[ "$child_comm" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
-      child_comm=$(awk -F '/' '{print $NF}' <<<"${array[3]}")
-    fi
-
-    # store the command to the array
-    comms+=("$child_comm")
 
     # WAY OUY?
 
@@ -128,9 +134,16 @@ function get_comms() {
     # NO -> otherwise, update the parent PID and keeping going up
     current_pid="${array[1]}"
 
+    # if dies in the process, leave this loop
+    elapsed=$(get_elapsed_time "$start_time")
+    if [[ "$elapsed" -gt $timeout ]]; then
+      break
+    fi    
+
   done
 
-  echo "${comms[@]}"
+  # echo if not empty
+  [ -z "${comms[*]}" ] || echo "${comms[@]}"
 }
 
 function join_data() {
@@ -245,8 +258,8 @@ function grab_stats() {
           if ( $2 >= cpu_threshold ) \
             print $0  \
         } \
-      ' \
-        | sort -k4,4 >"$temp_file"
+      ' |
+      sort -k4,4 >"$temp_file"
 
     # summarise children processes in the following format [PROCESS_NAME PROCESS_QUANTITY AVG_%_USAGE_ALLOCATED_CPU AVG_%_USAGE_MACHINE AVG_%_MEMORY_USAGE]
     unset individual_cpu_usage_per_process_type
@@ -267,7 +280,7 @@ function grab_stats() {
     # remove the last char that is a comma ","
     individual_cpu_usage_per_process_type="${individual_cpu_usage_per_process_type%?}"
 
-    # parse the resource usage for each command separated
+    # parse the resource usage for each command in a separated file
     unset rows
     IFS=, read -ra rows <<<"$individual_cpu_usage_per_process_type"
     for row in "${rows[@]}"; do
@@ -275,7 +288,7 @@ function grab_stats() {
       read -ra values <<<"${row}"
       outfile="$cvs_file"."${values[0]}"
       # write the header
-      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE" > "$outfile"
+      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE" >"$outfile"
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
