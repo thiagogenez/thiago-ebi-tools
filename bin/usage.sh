@@ -135,16 +135,43 @@ function get_comms() {
 function join_data() {
   local cvs_file=$1
 
-  files=($(ls "${cvs_file}"*))
+  mapfile -t files < <(ls "${cvs_file}"*)
+  sorted_files=()
+
+  # join requires that the files MUST be sorted in a lexicographic or lexicographical order
+  # otherwise, it will complain
   for f in "${files[@]}"; do
     {
       # grab the header and print it untouched
       IFS= read -ra header
-      echo "$header"
-      # now process the rest of the input
+      echo "${header[@]}"
+      # now process (sort) the rest of the input
       sort -t ',' -k 1b,1
-    } < orthofinder_jobID_52_t_32_4.usage > sorted
+    } <"$f" >"$f".sorted
+    sorted_files+=("$f".sorted)
   done
+
+  # join files
+  base_file="$cvs_file".sorted
+  for f in "${sorted_files[@]}"; do
+    if [[ "$f" != "$base_file" ]]; then
+
+      # join data using TIMESTAMP as join field
+      LC_COLLATE=C join -e 0.0 -t, -j 1 -o auto --header -a1 "$base_file" "$f" >"$base_file".tmp
+
+      # update join's FILE1 input file
+      mv "$base_file".tmp "$base_file"
+
+      # remove the .sorted file
+      rm "$f"
+    fi
+  done
+
+  # sort the final file in a numeric (cronological) order
+  sort -t ',' -k1,1 -n "$base_file" >"$cvs_file".joined
+
+  # remove the .sorted file
+  rm "$base_file"
 }
 
 function grab_stats() {
@@ -155,7 +182,7 @@ function grab_stats() {
   local start_time=$4
 
   #preamble: header of the CVS-format file
-  echo "TIME_SECONDS,TIME_FORMAT,CPU_USAGE_TOP,CPU_USAGE_PROC,MEM_USAGE,GPU_USAGE,GPU_MEM_USAGE,NOTES" >>"$cvs_file"
+  echo "TIME_SECONDS,TIME_FORMAT,OVERALL_CPU_USAGE_TOP,OVERALL_CPU_USAGE_PROC,OVERALL_MEM_USAGE,OVERALL_GPU_USAGE,OVERALL_GPU_MEM_USAGE,OVERALL_NOTES" >>"$cvs_file"
 
   while true; do
 
@@ -352,6 +379,9 @@ function main() {
 
   # create resource profile
   grab_stats "$target_pid" "$has_gpu" "$output_cvs_file" "$start_time"
+
+  # merge stats into one file
+  join_data "$output_cvs_file"
 
   [[ "$verbose_mode" == "YES" ]] && echo "$(basename "$0") finalised"
 }
