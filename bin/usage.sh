@@ -275,7 +275,7 @@ function grab_stats() {
         END { \
           for(i in PS) \
             if (PS[i]) \
-              printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i]/PS[i] \
+              printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i], MEM[i]/PS[i] \
         } \
       ' \
       "$temp_file")
@@ -290,7 +290,7 @@ function grab_stats() {
       read -ra values <<<"${row}"
       outfile="$cvs_file"."${values[0]}"
       # write the header
-      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_RELATIVE_MEM_USAGE" >"$outfile"
+      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_TOTAL_CPU_USAGE,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_TOTAL_MEM_USAGE,${values[0]}_RELATIVE_MEM_USAGE" >"$outfile"
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
