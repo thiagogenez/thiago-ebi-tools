@@ -23,7 +23,7 @@ function get_target_process_pid() {
 
   while true; do
     # set user ID to avoid "hijack"
-    target_pid=$(pgrep --oldest --full "$target_proc_name" --uid $(id -u))
+    target_pid=$(pgrep --oldest --full "$target_proc_name" --uid "$(id -u)")
 
     # if found it, job done
     if [[ "$target_pid" != "" ]]; then
@@ -59,29 +59,29 @@ function get_target_process_pid() {
 #   echo "${children[@]}" | tr ' ' '\n' | sed '/^[[:space:]]*$/d' | tail -n +2
 # }
 
-function get_leaves_children() {
+function get_newest_descendants() {
 
-  # Print all descendant that are leaves pids of $1
+  # Print all descendant that are leaves pids of $1, including $1 itself
   # Adapted from https://unix.stackexchange.com/a/339071
 
-  process=${1:-1}
-  local leaves=()
+  local process=${1:-1}
+  local descendants=("$process")
 
   while [ "$process" ]; do
     unset tmp children
     for p in $process; do
       IFS=" " read -r -a children <<<"$(cat /proc/"$p"/task/"$p"/children 2>/dev/null)"
       if [ "${#children[@]}" == "0" ]; then
-        leaves+=("$p")
+        descendants+=("$p")
       fi
       tmp="$tmp ${children[*]}"
     done
     process=("${tmp[@]}")
   done
-  echo "${leaves[@]}" | tr ' ' '\n'
+  echo "${descendants[@]}" | tr ' ' '\n'
 }
 
-function get_comms() {
+function get_commands() {
   # Print the commands path from $2 to $1
   # The given PID represented by $2 MUST be a child process of the process represented by the PID given by $1
 
@@ -94,7 +94,7 @@ function get_comms() {
   current_pid=$2
 
   # list of commands from the given PID=$1 until its parent process (which PID=$TARGET_PID)
-  comms=()
+  commands=()
 
   # in case $current_pid is already dead
   start_time="$SECONDS"
@@ -102,21 +102,21 @@ function get_comms() {
 
   while true; do
 
-    # <defunct>: some child process may have died already
+    # <defunct>: some child process may have died already, so remove it to avoid misleading interpretation
     IFS=" " read -r -a array <<<"$(ps -o comm,ppid,cmd -p "$current_pid" --no-headers  2>/dev/null  | sed 's/<defunct>//g' )"
 
     # check the current command that is consuming the CPU usage
-    child_comm="${array[0]}"
+    descendant_command="${array[0]}"
 
-    # especial case when $child_comm == "python3"
+    # especial case when $descendant_command == "python3"
     # extract the python filename
-    if [[ "$child_comm" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
-      child_comm="python3/$(awk -F '/' '{print $NF}' <<<"${array[3]}")"
+    if [[ "$descendant_command" == "python3" ]] && [[ "${array[0]}" == "${array[2]}" ]] && [[ "${array[3]}" != "" ]]; then
+      descendant_command="python3/$(awk -F '/' '{print $NF}' <<<"${array[3]}")"
     fi
 
     # store the command to the array
-    if [[ "${#child_comm}" -gt "0" ]]; then
-      comms+=("$child_comm")
+    if [[ "${#descendant_command}" -gt "0" ]]; then
+      commands+=("$descendant_command")
     fi
 
     # sanity-check: This is not suppose to happen
@@ -144,7 +144,7 @@ function get_comms() {
   done
 
   # echo if not empty
-  [ -z "${comms[*]}" ] || echo "${comms[@]}"
+  [ -z "${commands[*]}" ] || echo "${commands[@]}"
 }
 
 function join_data() {
@@ -191,7 +191,7 @@ function join_data() {
 
 function grab_stats() {
 
-  local root_pid=$1
+  local oldest_pid=$1
   local gpu=$2
   local cvs_file=$3
   local start_time=$4
@@ -245,15 +245,16 @@ function grab_stats() {
     format_time=$(bc <<<"$elapsed"/3600/24)$(date -ud "@$elapsed" +"d:%Hh:%Mm:%Ss")
 
     #######
-    ### 4) get the commands (children process of the $root_pid) that are using CPU > 10%
+    ### 4) get the commands (children process of the $oldest_pid) that are using CPU >= $cpu_threshold
     #######
+    cpu_threshold=0.0
 
-    # create a tmp file to have a screenshot
+    # create a tmp file to have a screenshot of running process
     temp_file=$(mktemp)
 
-    # get PID,PCPU,COMM for each running child process of $root_pid that is a leave
-    cpu_threshold=0.0
-    xargs -a <(get_leaves_children "$root_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} | awk -v cpu_threshold="$cpu_threshold" -F " " \
+    # get PID,PCPU,COMM for each running child process of $oldest_pid that is a leave (including the "root" oldest ancestor ifself )
+    # <defunct>: some child process may have died already, so remove it to avoid misleading interpretation
+    xargs -a <(get_newest_descendants "$oldest_pid") -n 1 -I{} ps -o pid,pcpu,pmem,comm --no-headers -p {} 2>/dev/null  |  grep -v "<defunct>" | awk  -v cpu_threshold="$cpu_threshold" -F " " \
       ' \
         { \
           if ( $2 >= cpu_threshold ) \
@@ -293,19 +294,19 @@ function grab_stats() {
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
-    # for each children process, get the path of commands between itself and its ascendent that the PID $root_pid
-    unset child_path
-    unset newest_child
+    # for each children process, get the path of commands between itself and its ascendent that the PID $oldest_pid
+    unset descendant_path
+    unset newest_descendant
     while read -r line; do
       # set user ID to avoid "hijack" 
-      newest_child=$(pgrep --newest "$line" --uid $(id -u))
-      child_path+=("$(get_comms "$root_pid" "$newest_child")")
+      newest_descendant=$(pgrep --newest "$line" --uid "$(id -u)")
+      descendant_path+=("$(get_commands "$oldest_pid" "$newest_descendant")")
     done < <(awk '{ PS[$4]++ } END { for (b in PS) { print b } }' "$temp_file")
 
     # organising the data as follows: [COMMAND_1>COMMAND_2>COMMAND_3>],
-    child_path=("$(printf '[%s],' "${child_path[@]}" | tr ' ' '>')")
+    descendant_path=("$(printf '[%s],' "${descendant_path[@]}" | tr ' ' '>')")
     # remove the last char that is a comma ","
-    child_path=("${child_path%?}")
+    descendant_path=("${descendant_path%?}")
 
     # delete the tmp file
     rm "$temp_file"
@@ -313,14 +314,14 @@ function grab_stats() {
     #######
     ### 5) Store data
     #######
-    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,${child_path[*]}" >>"$cvs_file"
+    echo "$elapsed,$format_time,$cpu_usage_top,$cpu_usage_proc,$mem_ram_usage,$gpu_usage,$gpu_mem_usage,${descendant_path[*]}" >>"$cvs_file"
 
     #######
     ### 6) WAY OUT?
     #######
 
     # YES -> watch $TARGET_PID to check it out if it is dead to break/exit the loop
-    ps -p "$root_pid" >/dev/null || break
+    ps -p "$oldest_pid" >/dev/null || break
 
     # NO -> otherwise, $TARGET_PID still alive and grabs the resource usage for the next round of 20 seconds of waiting
     sleep 20
