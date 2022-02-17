@@ -275,7 +275,7 @@ function grab_stats() {
         END { \
           for(i in PS) \
             if (PS[i]) \
-              printf "%s %i %.2f %.2f %.2f,", i, PS[i], CPU[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i], MEM[i]/PS[i] \
+              printf "%s %i %.3f %.3f %.3f %.3f %.3f,", i, PS[i], CPU[i], CPU[i]/PS[i], (PS[i]/nproc)*(CPU[i]/PS[i]), MEM[i], MEM[i]/PS[i] \
         } \
       ' \
       "$temp_file")
