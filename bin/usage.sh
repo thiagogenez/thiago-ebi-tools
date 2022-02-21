@@ -290,7 +290,7 @@ function grab_stats() {
       read -ra values <<<"${row}"
       outfile="$cvs_file"."${values[0]}"
       # write the header
-      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_TOTAL_CPU_USAGE,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE,${values[0]}_TOTAL_MEM_USAGE,${values[0]}_RELATIVE_MEM_USAGE" >"$outfile"
+      [ -f "$outfile" ] || echo "TIME_SECONDS,${values[0]}_TOTAL_THREADS,${values[0]}_ABSOLUTE_CPU_USAGE,${values[0]}_RELATIVE_CPU_USAGE_1,${values[0]}_RELATIVE_CPU_USAGE_2,${values[0]}_TOTAL_MEM_USAGE,${values[0]}_RELATIVE_MEM_USAGE" >"$outfile"
       echo "$elapsed ${values[*]:1}" | tr ' ' ',' >>"$outfile"
     done
 
@@ -304,8 +304,8 @@ function grab_stats() {
     done < <(awk '{ PS[$4]++ } END { for (b in PS) { print b } }' "$temp_file")
 
     # organising the data as follows: [COMMAND_1>COMMAND_2>COMMAND_3>],
-    descendant_path=("$(printf '[%s],' "${descendant_path[@]}" | tr ' ' '>')")
-    # remove the last char that is a comma ","
+    descendant_path=("$(printf '[%s]-' "${descendant_path[@]}" | tr ' ' '>')")
+    # remove the last char "-"
     descendant_path=("${descendant_path%?}")
 
     # delete the tmp file
