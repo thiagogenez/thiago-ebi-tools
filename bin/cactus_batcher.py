@@ -521,7 +521,7 @@ def get_slurm_submission(
         sbatch.append(f"-c {cpus}")
 
     if memory is not None:
-        sbatch.append(f"-mem {memory}")
+        sbatch.append(f"--mem {memory}")
 
     if dependencies is not None and len(dependencies) > 0:
         all_deps = ":$".join(["TASK_" + dep for dep in dependencies])
