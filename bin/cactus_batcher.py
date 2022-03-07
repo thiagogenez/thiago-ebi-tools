@@ -479,6 +479,7 @@ def get_slurm_submission(
     partition: str,
     gpus: int,
     cpus: int,
+    memory: int,
     command: str,
     dependencies: Sequence[str],
     script_filename: str,
@@ -518,6 +519,9 @@ def get_slurm_submission(
 
     if cpus is not None:
         sbatch.append(f"-c {cpus}")
+
+    if memory is not None:
+        sbatch.append(f"-mem {memory}")
 
     if dependencies is not None and len(dependencies) > 0:
         all_deps = ":$".join(["TASK_" + dep for dep in dependencies])
@@ -615,7 +619,7 @@ def slurmify(
                 info = cactus_job_command_name(line)
                 assert info is not None, "processed Cactus command info must not be empty"
 
-                # set Cactus log file for Toil outputs
+                # set Cactus log file for Toil outputsgi
                 if info["command"] != "halAppendSubtree" and info["command"] != "hal2fasta":
                     line = f"{line} --logFile {root_dir}/{log_dir}/{info['command']}-{info['id']}.log"
 
@@ -644,8 +648,11 @@ def slurmify(
                     log_dir=f"{root_dir}/{log_dir}",
                     script_filename=individual_bashscript_filename,
                     partition=resources[info["command"]]["partition"],
-                    gpus=resources[info["command"]]["gpus"],
+                    gpus=resources[info["command"]]["gpus"]
+                        if 'gpus' in resources[info["command"]] else None,
                     cpus=resources[info["command"]]["cpus"],
+                    memory=resources[info["command"]]["memory"]
+                        if 'memory' in resources[info["command"]] else None,  # in MB
                     command=line.strip(),
                     dependencies=intra_dependencies,
                     singularity=True,
