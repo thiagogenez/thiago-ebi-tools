@@ -108,11 +108,11 @@ def query_coredb(host, core_db, query):
 
     """
     mysql_call = [
-        "{}".format(host),
-        "{}".format(core_db),
-        "-ss",
-        "-e",
-        "{}".format(query),
+        f"{host}",
+        f"{core_db}",
+        f"-ss",
+        f"-e",
+        f"{query}"
     ]
     return subprocess_call(command=mysql_call)
 
@@ -135,7 +135,7 @@ def parse_yaml(file, dest):
             specie_name = query_coredb(
                 host=host,
                 core_db=core_db,
-                query='SELECT meta_value FROM meta WHERE meta_key="species.production_name";',
+                query=f"SELECT meta_value FROM meta WHERE meta_key='species.production_name';",
             )
 
             # in case gca is presented in the specie name
@@ -143,12 +143,12 @@ def parse_yaml(file, dest):
                 gca_number = query_coredb(
                     host=host,
                     core_db=core_db,
-                    query='SELECT meta_value FROM meta WHERE meta_key="assembly.accession";',
+                    query=f"SELECT meta_value FROM meta WHERE meta_key='assembly.accession';",
                 )
                 # fix the name
-                gca_number = gca_number.replace(".", "v").replace('_','').lower()
+                gca_number = gca_number.replace(".", "v").replace('_', '').lower()
                 specie_name = "{}_{}".format(specie_name, gca_number)
- 
+
             if specie_name is not None:
                 download_file(
                     host=host,
