@@ -34,7 +34,7 @@ def assemblies_parser(directories, ext):
     # ext string sanity check
     ext = re.sub("\\W+|_", "", ext).lower()
     ext = "." + ext
-    print("DIRS: {}".format(directories))
+
     for dest in directories:
 
         # get absolute path
@@ -92,7 +92,7 @@ def tree_parser(filename, tree_format, output):
     return {"tree": tree, "path": output}
 
 
-def create_new_tree(tree_content, assemblies_content, tree_format):
+def create_new_tree(tree_content, assemblies_content, tree_format, ext):
     """Create a Newick tree with sequence names based on the FASTA filenames parsed before
 
     Args:
@@ -108,7 +108,7 @@ def create_new_tree(tree_content, assemblies_content, tree_format):
 
     for leaf in tree_content["tree"].get_terminals():
 
-        name = re.sub("\\W+|_", "", leaf.name).lower()
+        name = re.sub("\\W+|_", "", leaf.name + ext).lower()
         for key, fasta in assemblies_content.items():
             if name in key:
                 leaf.name = fasta["name"]
@@ -253,7 +253,7 @@ if __name__ == "__main__":
     )
 
     # sanity check
-    unused_filenames = create_new_tree(tree_data, assemblies_data, args.format)
+    unused_filenames = create_new_tree(tree_data, assemblies_data, args.format, args.extension)
 
     # append FASTA locations to the cactus input file
     append_fasta_paths(tree_data["path"], assemblies_data)
