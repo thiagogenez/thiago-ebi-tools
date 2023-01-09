@@ -480,6 +480,7 @@ def get_slurm_submission(
     gpus: int,
     cpus: int,
     memory: int,
+    time: str,
     command: str,
     dependencies: Sequence[str],
     script_filename: str,
@@ -512,16 +513,21 @@ def get_slurm_submission(
 
     sbatch.append(f"-o {log_dir}/{job_name}-%j.out")
     sbatch.append(f"-e {log_dir}/{job_name}-%j.err")
-    sbatch.append(f"-p {partition}")
+    
 
     if gpus is not None and gpus != "None":
         sbatch.append(f"--gres=gpu:{gpus}")
-
+    else:
+        sbatch.append(f"-p {partition}")
+    
     if cpus is not None:
-        sbatch.append(f"-c {cpus}")
+        sbatch.append(f"--cpus-per-task {cpus}")
 
     if memory is not None:
-        sbatch.append(f"--mem {memory}")
+        sbatch.append(f"--mem={memory}")
+    
+    if time is not None:
+        sbatch.append(f"--time={time}")
 
     if dependencies is not None and len(dependencies) > 0:
         all_deps = ":$".join(["TASK_" + dep for dep in dependencies])
@@ -542,8 +548,7 @@ def get_slurm_submission(
 
     # real wrapped job
     job_filename = script_filename.replace(".sh", "-job.sh")
-    jobs = ["source ~/.google_env_loader.sh", command]
-
+    jobs = [command]
     if os.environ.get("CACTUS_USAGE_LOGGER") is not None:
         gpu_option = "" if gpus is None else "-g"
         jobs.insert(
@@ -653,6 +658,7 @@ def slurmify(
                     cpus=resources[info["command"]]["cpus"],
                     memory=resources[info["command"]]["memory"]
                         if 'memory' in resources[info["command"]] else None,  # in MB
+                    time=resources[info["command"]]["time"],
                     command=line.strip(),
                     dependencies=intra_dependencies,
                     singularity=True,
